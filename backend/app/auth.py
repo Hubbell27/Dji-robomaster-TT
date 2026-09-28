@@ -51,6 +51,8 @@ def _decode_staff_token(token: str) -> dict:
     s = get_settings()
     if s.auth_mode == "dev":
         return jwt.decode(token, s.dev_auth_secret, algorithms=["HS256"], audience="dev-staff", issuer="dev")
+    if s.auth_mode == "local":
+        return decode_local_token(token, "session")
     key = _jwks_client().get_signing_key_from_jwt(token)
     claims = jwt.decode(
         token,
@@ -64,6 +66,39 @@ def _decode_staff_token(token: str) -> dict:
         raise jwt.InvalidTokenError("expected an ID token")
     if not claims.get("email_verified"):
         raise jwt.InvalidTokenError("email not verified")
+    return claims
+
+
+LOCAL_AUD = "office-staff"
+LOCAL_ISS = "dental-intake"
+# Paths a user who must change their password may still call.
+_PASSWORD_CHANGE_PATHS = ("/api/auth/change-password", "/api/staff/me", "/api/auth/logout")
+
+
+def issue_local_staff_token(user: StaffUser, auth_time: int | None = None) -> tuple[str, int]:
+    """Session token for office-mode sign-in. Returns (token, expires_epoch)."""
+    from .keys import get_secrets
+
+    s = get_settings()
+    now = utcnow()
+    auth_time = auth_time or int(now.timestamp())
+    cap = auth_time + s.staff_session_max_hours * 3600
+    exp = min(int((now + timedelta(minutes=s.staff_session_minutes)).timestamp()), cap)
+    token = jwt.encode(
+        {"sub": user.id, "sv": user.session_version, "aud": LOCAL_AUD, "iss": LOCAL_ISS,
+         "iat": now, "exp": exp, "auth_time": auth_time, "typ": "session"},
+        get_secrets().staff_session_secret, algorithm="HS256",
+    )
+    return token, exp
+
+
+def decode_local_token(token: str, typ: str) -> dict:
+    from .keys import get_secrets
+
+    claims = jwt.decode(token, get_secrets().staff_session_secret, algorithms=["HS256"],
+                        audience=LOCAL_AUD, issuer=LOCAL_ISS, options={"require": ["exp", "sub"]})
+    if claims.get("typ") != typ:
+        raise jwt.InvalidTokenError("wrong token type")
     return claims
 
 
@@ -104,17 +139,27 @@ def current_staff(request: Request, db: Session = Depends(get_db)) -> StaffConte
                      details={"reason": type(e).__name__})
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or expired session") from None
 
-    sub, email = claims["sub"], (claims.get("email") or "").lower()
-    user = db.scalar(select(StaffUser).where(StaffUser.cognito_sub == sub))
-    if user is None and email:
-        # First sign-in: link the Cognito identity to the admin-provisioned record.
-        user = db.scalar(select(StaffUser).where(StaffUser.email == email, StaffUser.cognito_sub.is_(None)))
-        if user is not None:
-            user.cognito_sub = sub
-    if user is None or not user.active:
-        audit.record(request, audit.Actor("staff", sub, email), "auth.access_denied", outcome="denied",
-                     details={"reason": "unknown or inactive staff user"})
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "your account is not authorized for this application")
+    if get_settings().auth_mode == "local":
+        user = db.get(StaffUser, claims["sub"])
+        if user is None or not user.active or user.session_version != claims.get("sv"):
+            audit.record(request, audit.Actor("staff", claims["sub"]), "auth.access_denied", outcome="denied",
+                         details={"reason": "inactive user or revoked session"})
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "your session has ended; please sign in again")
+        if user.must_change_password and request.url.path not in _PASSWORD_CHANGE_PATHS:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "password change required")
+        claims["iat"] = claims.get("auth_time")
+    else:
+        sub, email = claims["sub"], (claims.get("email") or "").lower()
+        user = db.scalar(select(StaffUser).where(StaffUser.cognito_sub == sub))
+        if user is None and email:
+            # First sign-in: link the Cognito identity to the admin-provisioned record.
+            user = db.scalar(select(StaffUser).where(StaffUser.email == email, StaffUser.cognito_sub.is_(None)))
+            if user is not None:
+                user.cognito_sub = sub
+        if user is None or not user.active:
+            audit.record(request, audit.Actor("staff", sub, email), "auth.access_denied", outcome="denied",
+                         details={"reason": "unknown or inactive staff user"})
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "your account is not authorized for this application")
 
     first_request_of_session = user.last_login_at is None or (
         claims.get("iat") and user.last_login_at.timestamp() < claims["iat"]
@@ -138,6 +183,12 @@ def require_admin(ctx: StaffContext = Depends(current_staff), request: Request =
 # ------------------------------------------------------------------------- patient
 
 
+def _patient_secret() -> str:
+    from .keys import get_secrets
+
+    return get_secrets().patient_session_secret
+
+
 def new_link_token() -> tuple[str, str]:
     """Return (token, sha256 hex). Only the hash is persisted."""
     token = secrets.token_urlsafe(32)
@@ -154,7 +205,7 @@ def issue_patient_session(intake: Intake) -> str:
     exp = min(now + timedelta(minutes=s.patient_session_minutes), intake.expires_at)
     return jwt.encode(
         {"sub": intake.id, "ep": intake.session_epoch, "aud": "patient", "iat": now, "exp": exp},
-        s.patient_session_secret,
+        _patient_secret(),
         algorithm="HS256",
     )
 
@@ -170,7 +221,7 @@ def current_patient(request: Request, db: Session = Depends(get_db)) -> PatientC
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "session required")
     try:
-        claims = jwt.decode(token, get_settings().patient_session_secret, algorithms=["HS256"], audience="patient")
+        claims = jwt.decode(token, _patient_secret(), algorithms=["HS256"], audience="patient")
     except jwt.PyJWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "your session has expired, please reopen your link") from None
     intake = db.get(Intake, claims["sub"])

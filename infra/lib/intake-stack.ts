@@ -220,6 +220,12 @@ export class IntakeStack extends Stack {
       generateSecretString: { passwordLength: 64, excludePunctuation: true },
     });
 
+    const indexKeySecret = new secretsmanager.Secret(this, "PatientIndexKey", {
+      description: "HMAC key for the returning-patient lookup index",
+      encryptionKey: key,
+      generateSecretString: { passwordLength: 64, excludePunctuation: true },
+    });
+
     // -------------------------------------------------------------- app (ECS)
     const zone = route53.HostedZone.fromLookup(this, "Zone", { domainName: props.hostedZoneName });
     const certificate = new acm.Certificate(this, "Cert", {
@@ -260,6 +266,7 @@ export class IntakeStack extends Stack {
         logDriver: ecs.LogDrivers.awsLogs({ streamPrefix: "app", logGroup: appLogs }),
         environment: {
           INTAKE_ENVIRONMENT: "production",
+          INTAKE_DEPLOYMENT: "aws",
           INTAKE_PUBLIC_BASE_URL: appUrl,
           INTAKE_AUTH_MODE: "cognito",
           INTAKE_AWS_REGION: this.region,
@@ -279,6 +286,7 @@ export class IntakeStack extends Stack {
           INTAKE_DB_USERNAME: ecs.Secret.fromSecretsManager(db.secret!, "username"),
           INTAKE_DB_PASSWORD: ecs.Secret.fromSecretsManager(db.secret!, "password"),
           INTAKE_PATIENT_SESSION_SECRET: ecs.Secret.fromSecretsManager(patientSessionSecret),
+          INTAKE_INDEX_KEY: ecs.Secret.fromSecretsManager(indexKeySecret),
         },
       },
     });

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
+import { getConfig } from "./auth";
 import { fmtDate } from "./Dashboard";
 import { useStaff } from "./StaffApp";
 
 interface Loc { id: string; name: string; address: string; phone: string; active: boolean }
 interface Staff {
   id: string; email: string; full_name: string; role: "admin" | "front_desk"; active: boolean;
-  linked: boolean; last_login_at: string | null; locations: { id: string; name: string }[];
+  linked: boolean; mfa_enabled: boolean; locked: boolean; last_login_at: string | null;
+  locations: { id: string; name: string }[];
 }
 
 function useLocations() {
@@ -37,6 +39,10 @@ export function StaffUsers() {
   const [form, setForm] = useState({ email: "", full_name: "", role: "front_desk", location_ids: [] as string[] });
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [local, setLocal] = useState(false);
+  const [temp, setTemp] = useState<{ name: string; email: string; password: string } | null>(null);
+
+  useEffect(() => { getConfig().then((c) => setLocal(c.auth_mode === "local")); }, []);
 
   const reload = useCallback(() => call<Staff[]>("/api/admin/staff").then(setStaff), [call]);
   useEffect(() => { reload(); }, [reload]);
@@ -45,7 +51,8 @@ export function StaffUsers() {
     e.preventDefault();
     setError(null);
     try {
-      await call("/api/admin/staff", { method: "POST", body: form });
+      const created = await call<Staff & { temporary_password?: string }>("/api/admin/staff", { method: "POST", body: form });
+      if (created.temporary_password) setTemp({ name: created.full_name, email: created.email, password: created.temporary_password });
       setForm({ email: "", full_name: "", role: "front_desk", location_ids: [] });
       reload();
     } catch (err) {
@@ -62,12 +69,39 @@ export function StaffUsers() {
     }
   };
 
+  const reset = async (s: Staff, resetMfa: boolean) => {
+    const what = resetMfa ? "reset their password AND authenticator app (use if they lost their phone)" : "reset their password";
+    if (!confirm(`This will ${what} and sign them out everywhere. Continue?`)) return;
+    try {
+      const r = await call<Staff & { temporary_password: string }>(`/api/admin/staff/${s.id}/reset-password`, {
+        method: "POST", body: { reset_mfa: resetMfa },
+      });
+      setTemp({ name: r.full_name, email: r.email, password: r.temporary_password });
+      reload();
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
+
   return (
     <>
       <h1>Staff accounts</h1>
+      {temp && (
+        <div className="card temp-pass" role="alert">
+          <h2>Temporary password for {temp.name}</h2>
+          <p>Give this to <strong>{temp.email}</strong> in person. It is shown <strong>only once</strong>. At first sign-in they choose their own password and set up an authenticator app.</p>
+          <p className="big-code"><code>{temp.password}</code></p>
+          <div className="nav-row">
+            <button className="secondary" onClick={() => navigator.clipboard.writeText(temp.password)}>Copy</button>
+            <button className="primary" onClick={() => setTemp(null)}>I've handed it over</button>
+          </div>
+        </div>
+      )}
       <form className="card" onSubmit={create}>
-        <h2>Invite staff member</h2>
-        <p className="muted small">They receive an email invitation with a temporary password and must set up an authenticator app (MFA) on first sign-in.</p>
+        <h2>{local ? "Add staff member" : "Invite staff member"}</h2>
+        <p className="muted small">{local
+          ? "You'll get a one-time temporary password to give them. At first sign-in they choose their own password and set up an authenticator app (MFA)."
+          : "They receive an email invitation with a temporary password and must set up an authenticator app (MFA) on first sign-in."}</p>
         <div className="grid-3">
           <label className="field"><span className="field-label">Full name</span>
             <input required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></label>
@@ -81,7 +115,7 @@ export function StaffUsers() {
         <span className="field-label">Locations</span>
         <LocationPicker locs={locs} value={form.location_ids} onChange={(v) => setForm({ ...form, location_ids: v })} />
         {error && <p className="error">{error}</p>}
-        <button className="primary" type="submit">Send invitation</button>
+        <button className="primary" type="submit">{local ? "Create account" : "Send invitation"}</button>
       </form>
 
       <div className="table-wrap">
@@ -106,13 +140,20 @@ export function StaffUsers() {
                       <button className="link" onClick={() => setEditing(s.id)}>edit</button></>
                   )}
                 </td>
-                <td>{s.last_login_at ? fmtDate(s.last_login_at) : s.linked ? "—" : "Invited"}</td>
-                <td>{s.active ? "Active" : "Disabled"}</td>
-                <td>
+                <td>{s.last_login_at ? fmtDate(s.last_login_at) : s.linked ? "—" : local ? "Not signed in yet" : "Invited"}</td>
+                <td>{!s.active ? "Disabled" : s.locked ? <span className="badge locked">Locked out</span> : "Active"}
+                  {local && s.active && !s.mfa_enabled && <div className="muted small">MFA not set up yet</div>}</td>
+                <td className="nowrap">
                   {s.id !== me.id && (
                     <button className="link" onClick={() => patch(s.id, { active: !s.active })}>
                       {s.active ? "Disable" : "Re-enable"}
                     </button>
+                  )}
+                  {local && s.id !== me.id && (
+                    <>
+                      <button className="link" onClick={() => reset(s, false)}>Reset password</button>
+                      <button className="link" onClick={() => reset(s, true)}>Reset MFA</button>
+                    </>
                   )}
                 </td>
               </tr>

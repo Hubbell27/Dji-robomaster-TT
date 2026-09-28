@@ -76,7 +76,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .error-box ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
 
 .choice-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.chip { display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid var(--border); border-radius: 999px; padding: 0.5rem 1.1rem; cursor: pointer; background: #fff; min-height: 44px; }
+.chip { position: relative; display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid var(--border); border-radius: 999px; padding: 0.5rem 1.1rem; cursor: pointer; background: #fff; min-height: 44px; }
 .chip.on { border-color: var(--primary); background: var(--primary-soft); font-weight: 600; }
 .chip input { position: absolute; opacity: 0; pointer-events: none; }
 .chip:focus-within { outline: 3px solid color-mix(in srgb, var(--primary) 35%, transparent); }
@@ -183,4 +183,41 @@ table.audit td { font-size: 0.85rem; }
   .toolbar input, .toolbar select { width: 100%; min-width: 0; }
   .nav-row { flex-direction: column-reverse; }
   .nav-row button { width: 100%; }
+}
+
+/* ---------- full-day workflow ---------- */
+.stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.8rem 1rem; text-align: left; display: flex; flex-direction: column; gap: 0.1rem; }
+.stat strong { font-size: 1.6rem; line-height: 1.1; color: var(--text); }
+.stat span { color: var(--muted); font-size: 0.85rem; }
+.stat.hot { border-color: #7cc2a0; background: #f1faf5; }
+.stat.hot strong { color: var(--ok); }
+.stat.warn { border-color: #f0c38c; background: #fffaf0; }
+.tab-count { display: inline-block; margin-left: 0.4rem; min-width: 1.4rem; padding: 0 0.35rem; border-radius: 999px; background: var(--primary); color: #fff; font-size: 0.72rem; line-height: 1.4rem; text-align: center; }
+.nowrap { white-space: nowrap; }
+.tag { display: inline-block; margin-left: 0.4rem; padding: 0 0.45rem; border-radius: 4px; background: var(--primary-soft); color: var(--primary-dark); font-size: 0.72rem; font-weight: 600; vertical-align: middle; }
+.alerts { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.alert-chip { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; background: #eef2f5; color: #3d4b55; }
+.alert-chip.high { background: var(--danger-soft); color: var(--danger); }
+.alert-chip.more { background: none; color: var(--muted); }
+tr.has-alert td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.alert-banner { background: var(--danger-soft); border: 1px solid #f3b8b2; border-radius: var(--radius); padding: 0.8rem 1rem; margin-bottom: 1rem; display: flex; gap: 0.8rem; align-items: baseline; flex-wrap: wrap; }
+.alert-banner strong { color: var(--danger); }
+.badge.reviewed { background: #e3f6ec; color: var(--ok); }
+.badge.submitted { background: #fff3d6; color: #8a5a00; }
+.badge.purged { background: #eef0f2; color: #5d6b76; }
+.returning { background: var(--primary-soft); border: 1px solid #b8dbe6; border-radius: 8px; padding: 0.7rem 0.9rem; margin-bottom: 0.8rem; }
+.returning .check { margin-top: 0.4rem; }
+.link-grid { display: grid; grid-template-columns: auto 1fr; gap: 1.2rem; align-items: start; }
+.link-actions { display: flex; flex-direction: column; gap: 0.5rem; }
+.qr { margin: 0; text-align: center; }
+.qr img, .qr svg { width: 200px; height: 200px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.qr figcaption { font-size: 0.78rem; color: var(--muted); max-width: 200px; margin-top: 0.3rem; }
+.button-like { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; border: 1px solid var(--border); border-radius: 8px; min-height: 44px; padding: 0.6rem 1.1rem; font-weight: 500; }
+.code-input { font-size: 1.5rem; letter-spacing: 0.3em; text-align: center; font-family: ui-monospace, monospace; }
+.temp-pass { border-color: #f0c38c; background: #fffaf0; }
+.big-code code { font-size: 1.4rem; padding: 0.4rem 0.8rem; background: #fff; border: 1px dashed #c9a25a; }
+@media (max-width: 640px) {
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .link-grid { grid-template-columns: 1fr; }
 }

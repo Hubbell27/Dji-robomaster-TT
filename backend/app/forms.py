@@ -205,3 +205,64 @@ def validate_consents(raw: Any) -> tuple[dict[str, Any], list[dict[str, str]]]:
             "signature": c.get("signature"),
         }
     return clean, errors
+
+
+# Answers that staff should see at a glance. level "high" = clinically urgent.
+_ALERT_CONDITIONS = {
+    "artificial_valve": ("Artificial heart valve", "high"),
+    "pacemaker": ("Pacemaker / defibrillator", "high"),
+    "bleeding_disorder": ("Bleeding disorder", "high"),
+    "heart_disease": ("Heart disease", "high"),
+    "rheumatic_fever": ("Rheumatic fever history", "info"),
+    "joint_replacement": ("Joint replacement", "info"),
+    "radiation": ("Head/neck radiation", "high"),
+    "diabetes": ("Diabetes", "info"),
+    "seizures": ("Seizures", "high"),
+    "stroke": ("Stroke history", "info"),
+    "high_bp": ("High blood pressure", "info"),
+    "asthma": ("Asthma", "info"),
+}
+
+
+def compute_alerts(answers: dict[str, Any]) -> list[dict[str, str]]:
+    """Derive medical alerts from submitted answers for the staff dashboard."""
+    alerts: list[dict[str, str]] = []
+    by_key = {f["key"]: f for f in all_fields()}
+
+    def add(code: str, label: str, level: str = "high") -> None:
+        if not any(a["code"] == code for a in alerts):
+            alerts.append({"code": code, "label": label, "level": level})
+
+    if answers.get("has_allergies") == "yes":
+        opts = {o["value"]: o["label"]["en"] for o in by_key["common_allergies"]["options"]}
+        for v in answers.get("common_allergies") or []:
+            add(f"allergy:{v}", f"Allergy: {opts.get(v, v)}")
+        for item in answers.get("allergy_list") or []:
+            name = (item.get("allergen") or "").strip()
+            if not name:
+                continue
+            severe = item.get("severity") == "severe"
+            # Merge with a matching checkbox allergy instead of listing it twice.
+            match = next((a for a in alerts if a["code"].startswith("allergy:")
+                          and (name.lower() in a["label"].lower() or a["label"].lower().split(": ", 1)[1].split(" /")[0] in name.lower())), None)
+            if match:
+                if severe:
+                    match["label"] = f"SEVERE {match['label']}"
+                continue
+            add(f"allergy_item:{name.lower()}", f"{'SEVERE ' if severe else ''}Allergy: {name}")
+    if answers.get("blood_thinners") == "yes":
+        add("blood_thinners", "Takes blood thinners")
+    if answers.get("premed_antibiotics") == "yes":
+        add("premed", "Antibiotic premedication required")
+    if answers.get("bisphosphonates") == "yes":
+        add("bisphosphonates", "Bisphosphonate history (MRONJ risk)")
+    if answers.get("pregnant") in ("pregnant", "nursing"):
+        add("pregnant", "Pregnant" if answers["pregnant"] == "pregnant" else "Nursing", "info")
+    for v in answers.get("conditions") or []:
+        if v in _ALERT_CONDITIONS:
+            label, level = _ALERT_CONDITIONS[v]
+            add(f"condition:{v}", label, level)
+    if answers.get("tobacco") == "current":
+        add("tobacco", "Current tobacco use", "info")
+    alerts.sort(key=lambda a: a["level"] != "high")
+    return alerts

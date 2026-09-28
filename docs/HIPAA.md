@@ -15,6 +15,30 @@ documentation, not legal advice.
 | **Person or entity authentication** | Staff authenticate with a Cognito password plus mandatory TOTP MFA. Patients hold an unguessable single-purpose link, confirm their date of birth (with lockout after 5 failures) and get a 30-minute session scoped to one intake. |
 | **Transmission security** | HTTPS only (ALB TLS policy, HSTS, HTTP→HTTPS redirect). TLS to RDS is enforced and verified. The S3 policy denies non-TLS requests. Traffic to KMS and Secrets Manager goes through VPC endpoints. |
 
+## Office (single PC) deployment
+
+The same safeguards apply, with these office-specific pieces:
+
+- **Login:** passwords are hashed with scrypt, and TOTP MFA is mandatory with
+  replay protection (each code works once). Five failures lock the account for
+  15 minutes. Sessions last 60 minutes (sliding) with a 12-hour cap. Resetting a
+  password or disabling an account ends all of that user's sessions. New staff
+  get one-time temporary passwords and must change them at first sign-in.
+- **Keys:** a key file with mode 0600 is generated on first start, holding the
+  master key, the lookup index key and session secrets. The app refuses to start
+  if the key file is missing while encrypted data exists, so it can never quietly
+  mint a new key. Export the key to offline media (`export-key`).
+- **Transport:** HTTPS through Caddy, with the office CA or Let's Encrypt. The app
+  and database are not published on the network: only Caddy's ports 80/443 are
+  open, and port 80 only serves the CA certificate and redirects to HTTPS.
+- **Backups:** a nightly `pg_dump` plus the encrypted file store, keeping 30
+  days. Backup contents stay application-encrypted, and the key is deliberately
+  not included.
+- **Practice responsibilities specific to a PC:** full-disk encryption
+  (BitLocker/FileVault), physical security of the PC, OS updates and antivirus, a
+  dedicated Windows account, offsite backup copies, and keeping the key USB in a
+  safe.
+
 ## Data protection details
 
 - **At rest:** One customer-managed KMS key (annual rotation) encrypts RDS
@@ -54,9 +78,9 @@ Before storing real patient data:
    someone leaves (Staff → Disable).
 4. **Review audit logs** regularly (Admin → Audit log, or CloudWatch Logs
    Insights) and respond to alarm emails.
-5. **Retention and disposal:** Decide how long submissions are retained under
-   state dental-record law. Automated purge is not implemented yet, so add it
-   before the retention period elapses, or delete records per policy.
+5. **Retention and disposal:** Set `INTAKE_RETENTION_YEARS` to match your state's
+   dental-record retention law (default 10 years). Unfinished forms are purged
+   after 90 days. Purges are automatic, daily and audit-logged.
 6. **Content review:** Have your attorney review the consent language and
    financial policy. Have a qualified translator review the Spanish text.
 7. **Backups and continuity:** RDS PITR (35 days) and S3 versioning are
@@ -74,4 +98,5 @@ Before storing real patient data:
   would further reduce XSS impact, though a strict CSP already mitigates this.
 - Patient name search decrypts the most recent 1,000 matching intakes in
   memory. That is fine for a practice, but a blind index would scale further.
-- Automatic data purge after the retention period is not implemented.
+- Office mode on patients' own phones requires either a real domain with a
+  trusted certificate or the AWS deployment (see the office guide).

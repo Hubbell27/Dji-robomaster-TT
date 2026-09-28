@@ -39,7 +39,8 @@ class KeyProvider(Protocol):
 
 
 class LocalKeyProvider:
-    """Dev/test only: wraps data keys with a static master key."""
+    """Wraps data keys with a master key held on this machine (office key file,
+    or a static dev/test key)."""
 
     def __init__(self, master_key_b64: str):
         master = base64.b64decode(master_key_b64)
@@ -91,7 +92,29 @@ def get_key_provider() -> KeyProvider:
     s = get_settings()
     if s.key_provider == "kms":
         return KmsKeyProvider(s.kms_key_id, s.aws_region)
-    return LocalKeyProvider(s.local_data_key)
+    from .keys import get_secrets
+
+    return LocalKeyProvider(get_secrets().master_key_b64)
+
+
+def patient_index(first_name: str, last_name: str, dob: str) -> str:
+    """Keyed hash of a patient's normalized name + DOB.
+
+    Lets staff find a returning patient's previous submission without storing
+    names in plaintext. Not reversible without the index key.
+    """
+    import hashlib
+    import hmac
+    import unicodedata
+
+    from .keys import get_secrets
+
+    def norm(v: str) -> str:
+        v = unicodedata.normalize("NFKD", v).encode("ascii", "ignore").decode()
+        return "".join(c for c in v.lower() if c.isalnum())
+
+    msg = f"{norm(first_name)}|{norm(last_name)}|{dob}".encode()
+    return hmac.new(get_secrets().index_key, msg, hashlib.sha256).hexdigest()
 
 
 def encrypt_bytes(plaintext: bytes, aad: str) -> bytes:

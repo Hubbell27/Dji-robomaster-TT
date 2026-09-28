@@ -1,0 +1,27 @@
+# HTTPS front door for the office deployment.
+#   TLS_MODE=internal  -> Caddy's own certificate authority (default; works with
+#                         an IP address or a PC name on the office network).
+#   TLS_MODE=you@practice.com -> real Let's Encrypt certificate; requires a real
+#                         domain pointing at this PC and ports 80/443 reachable.
+https://{$SITE_HOST} {
+	tls {$TLS_MODE}
+	encode gzip
+	request_body {
+		max_size 12MB
+	}
+	reverse_proxy app:8000
+}
+
+# Plain HTTP only serves the office certificate (so tablets can install it)
+# and redirects everything else to HTTPS.
+http://{$SITE_HOST} {
+	handle /office-ca.crt {
+		root * /data/caddy/pki/authorities/local
+		rewrite * /root.crt
+		header Content-Type application/x-x509-ca-cert
+		file_server
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}

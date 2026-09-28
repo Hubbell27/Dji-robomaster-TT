@@ -62,7 +62,7 @@ export interface FieldError {
 export interface IntakeSummary {
   id: string;
   patient: { first_name: string; last_name: string; dob: string };
-  status: "pending" | "in_progress" | "submitted" | "expired" | "locked" | "cancelled";
+  status: "pending" | "in_progress" | "submitted" | "expired" | "locked" | "cancelled" | "purged";
   language: Lang;
   location: { id: string; name: string };
   created_by: string;
@@ -71,6 +71,11 @@ export interface IntakeSummary {
   first_opened_at: string | null;
   submitted_at: string | null;
   dob_failed_attempts: number;
+  appointment_at: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  alerts: { code: string; label: string; level: "high" | "info" }[];
+  prefilled: boolean;
 }
 
 export interface IntakeDetail extends IntakeSummary {
@@ -88,6 +93,8 @@ export interface StaffMe {
   email: string;
   full_name: string;
   role: "admin" | "front_desk";
+  must_change_password: boolean;
+  office_timezone: string;
   locations: { id: string; name: string }[];
 }
 

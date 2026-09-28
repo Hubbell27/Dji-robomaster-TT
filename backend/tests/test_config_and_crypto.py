@@ -15,7 +15,15 @@ def test_production_accepts_hardened_settings():
     Settings(environment="production", auth_mode="cognito", key_provider="kms", storage_backend="s3",
              public_base_url="https://intake.example.com", patient_session_secret="x" * 48,
              database_sslmode="verify-full", cognito_user_pool_id="us-east-1_abc", cognito_client_id="abc",
-             kms_key_id="arn:aws:kms:us-east-1:1:key/1", s3_bucket="bucket")
+             kms_key_id="arn:aws:kms:us-east-1:1:key/1", s3_bucket="bucket", index_key="k" * 44)
+
+
+def test_office_production_settings():
+    Settings(environment="production", deployment="office", auth_mode="local", key_provider="file",
+             storage_backend="local", public_base_url="https://intake.office.lan")
+    with pytest.raises(ValueError):
+        Settings(environment="production", deployment="office", auth_mode="dev", key_provider="file",
+                 storage_backend="local", public_base_url="https://intake.office.lan")
 
 
 def test_envelope_encryption_roundtrip_and_aad_binding():

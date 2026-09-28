@@ -11,6 +11,20 @@ and every access to patient data is audit-logged.
 - **Frontend:** React 19 + TypeScript (Vite). One SPA serves both the patient portal (`/intake`) and the staff dashboard (`/staff`).
 - **AWS:** ECS Fargate behind an ALB with WAF, RDS PostgreSQL, S3 (SSE-KMS), KMS, Cognito (required MFA), Secrets Manager, CloudWatch and CloudTrail, defined in AWS CDK (`infra/`)
 
+## Two ways to run it
+
+| | **Office PC** (`docker-compose.office.yml`) | **AWS** (`infra/`) |
+| --- | --- | --- |
+| Best for | Getting started; in-office check-in on tablets and office PCs | Patients completing forms from home; several offices |
+| Install | Docker Desktop + double-click `office/Start Dental Intake.bat` | `cdk deploy` |
+| Staff login | Password + authenticator app (built in) | Amazon Cognito + authenticator app |
+| Encryption keys | Key file generated on the PC (export to USB) | AWS KMS |
+| HTTPS | Caddy with an office certificate (or Let's Encrypt with a domain) | ACM certificate on the load balancer |
+| Backups | Nightly database + files backup to `backups/` | RDS point-in-time recovery + S3 versioning |
+
+**Running it in the office?** Start with **[docs/OFFICE_GUIDE.md](docs/OFFICE_GUIDE.md)**,
+which covers install, first sign-in, the daily routine, backups and troubleshooting.
+
 See [`docs/HIPAA.md`](docs/HIPAA.md) for how each requirement is met and what
 the practice must still do (BAA, policies, reviews).
 
@@ -30,7 +44,27 @@ the practice must still do (BAA, policies, reviews).
 | Roles and locations | **Admin** manages staff, locations and the audit log, and sees every location. **Front desk** sees only their assigned locations. |
 | Audit logging | Every sign-in, list view, record view, PDF download, photo view, link action, admin change and denied request is written to an append-only table (a DB trigger rejects UPDATE/DELETE/TRUNCATE). A copy goes to an encrypted CloudWatch log group with 6-year retention and alarms. Admins can view the log in the app. |
 | PDF per submission | Generated at submit time and stored encrypted. It includes all answers, card photos, consent text (plus an English translation for Spanish forms) and signatures. Staff download it through the API, and each download is audited. |
-| Dashboard | Tabs for Pending, Completed, Expired/locked and All. Filter by location, search by name or DOB, create links, view details, reissue or cancel. |
+| Dashboard | **Today** view in appointment order with live counts (auto-refresh every 30 s). Other views: Waiting on patient, Needs review, Completed, Expired/locked, All. Filter by location, search by name or DOB. |
+| Busy-day workflow | Press **N** for a new intake. **Next patient →** keeps location, language and date filled in. Links come with a QR code, a ready-to-send text message and an "open on this tablet" button. **Mark reviewed & next →** works through the review queue. **Print** opens the PDF directly. |
+| Returning patients | Detected by a keyed hash of name + DOB, so names are never stored in plaintext. The next form is pre-filled with last visit's answers and card photos. The patient reviews, updates and re-signs. |
+| Medical alerts | Allergies (severe ones flagged), blood thinners, antibiotic premedication, bisphosphonates, heart valve/pacemaker, bleeding disorders, pregnancy and more. Shown as chips on the board, a banner on the detail page, and a box on the PDF. |
+| Retention | Completed forms are purged after `INTAKE_RETENTION_YEARS` (default 10) and unfinished forms after 90 days. Files are deleted, encrypted data is blanked, and each purge is audit-logged. |
+
+## Office PC quick start
+
+```powershell
+# Windows: install Docker Desktop, then double-click office\Start Dental Intake.bat
+# or from PowerShell in the project folder:
+.\office\office.ps1 start
+```
+```bash
+# Mac / Linux
+./office/office.sh start
+```
+
+The first run asks for the PC's address and time zone, builds everything and
+creates the first admin (printing a one-time password). It then opens
+`https://<PC address>/staff`. Full details are in [docs/OFFICE_GUIDE.md](docs/OFFICE_GUIDE.md).
 
 ## Local development
 
@@ -94,8 +128,9 @@ Database migrations run automatically when each task starts (`alembic upgrade he
 ```
 backend/   FastAPI app (app/), Alembic migrations, pytest suite
 frontend/  React SPA: src/patient (intake portal), src/staff (dashboard/admin)
+office/    Office-PC install: control scripts (Windows/Mac/Linux), Caddyfile, backup script
 infra/     AWS CDK stack (TypeScript)
-docs/      HIPAA safeguards and operator responsibilities
+docs/      Office guide, HIPAA safeguards and operator responsibilities
 ```
 
 ## Editing forms and consents

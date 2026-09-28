@@ -49,6 +49,14 @@ const strings = {
   },
   linkExpires: { en: "This link expires", es: "Este enlace vence el" },
   questions: { en: "Questions? Call us at", es: "¿Preguntas? Llámenos al" },
+  prefilled: {
+    en: "Welcome back! We filled in your answers from your last visit. Please check each page, update anything that changed (medications, insurance, health), and sign the consent forms again.",
+    es: "¡Bienvenido(a) de nuevo! Completamos sus respuestas de su última visita. Revise cada página, actualice lo que haya cambiado (medicamentos, seguro, salud) y vuelva a firmar los consentimientos.",
+  },
+  handBack: {
+    en: "If you are using an office tablet, please return it to the front desk.",
+    es: "Si está usando una tableta de la oficina, devuélvala a la recepción.",
+  },
 } satisfies Record<string, Record<Lang, string>>;
 
 export type StringKey = keyof typeof strings;

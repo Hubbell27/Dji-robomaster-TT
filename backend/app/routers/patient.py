@@ -104,7 +104,8 @@ def verify(body: VerifyIn, request: Request, db: Session = Depends(get_db)) -> d
 def get_intake(request: Request, ctx: PatientContext = Depends(current_patient)) -> dict[str, Any]:
     intake = ctx.intake
     ident = services.identity(intake)
-    draft = services.load_form(intake).get("answers", {})
+    form = services.load_form(intake)
+    draft = form.get("answers", {})
     # Staff-entered identity pre-fills the form; DOB is fixed (it was verified).
     answers = {"first_name": ident["first_name"], "last_name": ident["last_name"], **draft, "dob": ident["dob"]}
     audit.record(request, ctx.actor, "patient.intake_opened", resource_type="intake", resource_id=intake.id,
@@ -112,6 +113,7 @@ def get_intake(request: Request, ctx: PatientContext = Depends(current_patient))
     return {
         **_session_payload(intake),
         "answers": answers,
+        "prefilled": bool(form.get("prefilled_from")),
         "files": [{"id": f.id, "kind": f.kind} for f in intake.files],
     }
 
@@ -122,7 +124,9 @@ def save_draft(body: DraftIn, request: Request, db: Session = Depends(get_db),
     intake = db.merge(ctx.intake)
     answers = forms.sanitize_answers(body.answers)
     answers["dob"] = services.identity(intake)["dob"]
-    services.save_form(intake, {"answers": answers})
+    previous = services.load_form(intake)
+    services.save_form(intake, {"answers": answers, **({"prefilled_from": previous["prefilled_from"]}
+                                                        if previous.get("prefilled_from") else {})})
     if body.language in forms.LANGUAGES:
         intake.language = body.language
     db.commit()
@@ -217,7 +221,7 @@ def submit(body: SubmitIn, request: Request, db: Session = Depends(get_db),
         intake_id=intake.id,
         location={"name": intake.location.name, "address": intake.location.address, "phone": intake.location.phone},
         language=language, submitted_at=now, answers=answers, consents=consents,
-        signature_meta=signature_meta, card_images=card_images,
+        signature_meta=signature_meta, card_images=card_images, alerts=forms.compute_alerts(answers),
     )
     pdf_file = services.store_encrypted_file(intake, "submission_pdf", pdf_bytes, "application/pdf")
     db.add(pdf_file)
@@ -228,6 +232,7 @@ def submit(body: SubmitIn, request: Request, db: Session = Depends(get_db),
         "signature_meta": signature_meta,
         "form_version": forms.form_definition()["version"],
     })
+    services.save_alerts(intake, forms.compute_alerts(answers))
     intake.language = language
     intake.pdf_key = pdf_file.id
     intake.status = IntakeStatus.submitted

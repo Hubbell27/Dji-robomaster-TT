@@ -19,7 +19,7 @@ def _create(client, headers, **overrides):
     r = client.post("/api/staff/intakes", json=body, headers=headers)
     assert r.status_code == 201, r.text
     data = r.json()
-    token = data["link"].split("#t=", 1)[1]
+    token = data["link"].split("#t=", 1)[1].split("&", 1)[0]
     return data["intake"]["id"], token
 
 

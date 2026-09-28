@@ -45,9 +45,12 @@ class UTCDateTime(TypeDecorator):
     cache_ok = True
 
     def process_bind_param(self, value, dialect):
-        if value is not None and value.tzinfo is None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
             raise ValueError("naive datetime")
-        return value
+        # Always store UTC so comparisons are correct on every backend.
+        return value.astimezone(timezone.utc)
 
     def process_result_value(self, value, dialect):
         if value is not None and value.tzinfo is None:
@@ -67,6 +70,7 @@ class IntakeStatus(str, enum.Enum):
     expired = "expired"
     locked = "locked"  # too many failed DOB attempts
     cancelled = "cancelled"
+    purged = "purged"  # retention period elapsed; PHI deleted, row kept as a tombstone
 
 
 OPEN_STATUSES = (IntakeStatus.pending, IntakeStatus.in_progress)
@@ -104,6 +108,17 @@ class StaffUser(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
+    # --- office-mode (auth_mode=local) credentials ---
+    password_hash: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_secret_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    # Bumped on password reset / deactivation to end every open session.
+    session_version: Mapped[int] = mapped_column(Integer, default=0)
+
     locations: Mapped[list[Location]] = relationship(secondary=staff_locations, lazy="selectin")
 
     def can_access_location(self, location_id: str) -> bool:
@@ -129,11 +144,22 @@ class Intake(Base):
     session_epoch: Mapped[int] = mapped_column(Integer, default=0)
 
     # Encrypted: {"first_name", "last_name", "dob"} entered by staff.
-    identity_enc: Mapped[bytes] = mapped_column(LargeBinary)
+    identity_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     # Encrypted: full form answers + consent signatures (draft, then final).
     form_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     pdf_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    # Keyed hash of normalized name + DOB (see crypto.patient_index) for
+    # returning-patient lookup without plaintext names.
+    patient_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    prefilled_from_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    appointment_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True, index=True)
+    # Encrypted list of medical alert codes computed at submission.
+    alerts_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    reviewed_by_id: Mapped[str | None] = mapped_column(ForeignKey("staff_users.id"), nullable=True)
+    purged_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
@@ -141,7 +167,8 @@ class Intake(Base):
     submitted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
     location: Mapped[Location] = relationship(lazy="joined")
-    created_by: Mapped[StaffUser] = relationship(lazy="joined")
+    created_by: Mapped[StaffUser] = relationship(lazy="joined", foreign_keys=[created_by_id])
+    reviewed_by: Mapped[StaffUser | None] = relationship(lazy="joined", foreign_keys=[reviewed_by_id])
     files: Mapped[list[IntakeFile]] = relationship(
         back_populates="intake", lazy="selectin", order_by="IntakeFile.created_at"
     )

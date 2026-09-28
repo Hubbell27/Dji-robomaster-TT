@@ -7,7 +7,8 @@
 import { api } from "../lib/api";
 
 interface PublicConfig {
-  auth_mode: "cognito" | "dev";
+  auth_mode: "cognito" | "local" | "dev";
+  deployment: "aws" | "office";
   cognito_domain: string;
   cognito_client_id: string;
 }
@@ -96,6 +97,36 @@ export async function completeLogin(search: string): Promise<void> {
   save({ id_token: data.id_token, refresh_token: data.refresh_token, expires_at: decodeExp(data.id_token) });
 }
 
+// ------------------------------------------------------------ office (local) mode
+
+export type LocalStage =
+  | { stage: "mfa"; challenge: string }
+  | { stage: "enroll"; challenge: string; qr_svg: string; secret: string; otpauth_uri: string };
+
+export async function localLogin(email: string, password: string): Promise<LocalStage> {
+  return api<LocalStage>("/api/auth/login", { method: "POST", body: { email, password } });
+}
+
+interface LocalSession { token: string; expires_at: number; must_change_password: boolean }
+
+function saveLocal(s: LocalSession) {
+  save({ id_token: s.token, expires_at: s.expires_at * 1000 });
+}
+
+export async function localVerify(challenge: string, code: string): Promise<LocalSession> {
+  const s = await api<LocalSession>("/api/auth/verify-mfa", { method: "POST", body: { challenge, code } });
+  saveLocal(s);
+  return s;
+}
+
+export async function changePassword(current_password: string, new_password: string): Promise<void> {
+  const token = await getToken();
+  const s = await api<LocalSession>("/api/auth/change-password", {
+    method: "POST", token, body: { current_password, new_password },
+  });
+  saveLocal(s);
+}
+
 export async function devLogin(email: string): Promise<void> {
   const data = await api<{ id_token: string }>("/api/dev/login", { method: "POST", body: { email } });
   save({ id_token: data.id_token, expires_at: decodeExp(data.id_token) });
@@ -103,6 +134,16 @@ export async function devLogin(email: string): Promise<void> {
 
 async function refresh(tokens: Tokens): Promise<Tokens | null> {
   const cfg = await getConfig();
+  if (cfg.auth_mode === "local") {
+    try {
+      const s = await api<LocalSession>("/api/auth/refresh", { method: "POST", token: tokens.id_token });
+      const next = { id_token: s.token, expires_at: s.expires_at * 1000 };
+      sessionStorage.setItem(TOKENS, JSON.stringify(next));
+      return next;
+    } catch {
+      return null;
+    }
+  }
   if (!tokens.refresh_token || cfg.auth_mode !== "cognito") return null;
   const res = await fetch(`${cfg.cognito_domain}/oauth2/token`, {
     method: "POST",
@@ -125,7 +166,8 @@ export async function getToken(): Promise<string | null> {
     return null;
   }
   let tokens = JSON.parse(raw) as Tokens;
-  if (tokens.expires_at - Date.now() < 60_000) {
+  // Refresh a few minutes early so a busy front desk is never cut off mid-task.
+  if (tokens.expires_at - Date.now() < 5 * 60_000) {
     const refreshed = await refresh(tokens);
     if (!refreshed) {
       clearSession();
@@ -143,6 +185,10 @@ export function clearSession() {
 
 export async function logout(): Promise<void> {
   const cfg = await getConfig();
+  const raw = sessionStorage.getItem(TOKENS);
+  if (cfg.auth_mode === "local" && raw) {
+    await api("/api/auth/logout", { method: "POST", token: JSON.parse(raw).id_token }).catch(() => undefined);
+  }
   clearSession();
   if (cfg.auth_mode === "cognito") {
     const params = new URLSearchParams({ client_id: cfg.cognito_client_id, logout_uri: `${window.location.origin}/staff` });

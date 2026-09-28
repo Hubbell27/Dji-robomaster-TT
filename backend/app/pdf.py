@@ -81,6 +81,7 @@ def render_submission_pdf(
     consents: dict[str, Any],
     signature_meta: dict[str, Any],
     card_images: dict[str, bytes],
+    alerts: list[dict[str, str]] | None = None,
 ) -> bytes:
     definition = form_definition()
     buf = io.BytesIO()
@@ -114,6 +115,14 @@ def render_submission_pdf(
          [_p("Intake ID", LABEL), _p(intake_id, SMALL), _p("Form version", LABEL), _p(definition["version"])]],
         colWidths=[1.0 * inch, 2.4 * inch, 1.1 * inch, width - 4.5 * inch], style=_GRID,
     ))
+
+    if alerts:
+        story.append(_p("Medical alerts", H2))
+        story.append(Table([[_p("\u2022 " + a["label"], BODY)] for a in alerts], colWidths=[width], style=TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fdecea")),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#b42318")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ])))
 
     for section in definition["sections"]:
         story.append(_p(section["title"]["en"], H2))

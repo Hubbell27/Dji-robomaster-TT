@@ -47,3 +47,16 @@ jobs:
         with: { node-version: "22" }
       - run: npm ci
       - run: npm run build
+
+  office:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: office scripts parse
+        run: bash -n office/office.sh && sh -n office/backup.sh
+      - name: office compose file is valid
+        run: |
+          printf 'POSTGRES_PASSWORD=ci\nSITE_HOST=localhost\n' > office/.env
+          docker compose -f docker-compose.office.yml --env-file office/.env config --quiet
+      - name: office image builds
+        run: docker build -t dental-intake-app:ci .

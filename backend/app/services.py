@@ -10,21 +10,64 @@ from fastapi import Request
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from . import audit, crypto
+from . import audit, crypto, forms
 from .auth import new_link_token
 from .config import get_settings
 from .models import OPEN_STATUSES, Intake, IntakeFile, IntakeStatus, new_id, utcnow
 from .storage import get_storage
 
 
-def patient_link(token: str) -> str:
+def patient_link(token: str, language: str = "en") -> str:
     # The token travels in the URL fragment, which browsers never send to the
     # server, so it cannot leak into ALB/CloudFront access logs or Referer headers.
-    return f"{get_settings().public_base_url.rstrip('/')}/intake#t={token}"
+    # The language hint lets the very first screen appear in the patient's language.
+    lang = f"&l={language}" if language != "en" else ""
+    return f"{get_settings().public_base_url.rstrip('/')}/intake#t={token}{lang}"
 
 
 def identity(intake: Intake) -> dict[str, str]:
+    if intake.identity_enc is None:  # purged
+        return {"first_name": "(purged)", "last_name": "(purged)", "dob": ""}
     return crypto.decrypt_json(intake.identity_enc, intake.aad("identity"))
+
+
+def set_identity(intake: Intake, first_name: str, last_name: str, dob: str) -> None:
+    intake.identity_enc = crypto.encrypt_json(
+        {"first_name": first_name, "last_name": last_name, "dob": dob}, intake.aad("identity"))
+    intake.patient_key = crypto.patient_index(first_name, last_name, dob)
+
+
+def alerts(intake: Intake) -> list[dict[str, str]]:
+    return crypto.decrypt_json(intake.alerts_enc, intake.aad("alerts")) or []
+
+
+def save_alerts(intake: Intake, values: list[dict[str, str]]) -> None:
+    intake.alerts_enc = crypto.encrypt_json(values, intake.aad("alerts"))
+
+
+def previous_submissions(db: Session, patient_key: str, exclude_id: str | None = None) -> list[Intake]:
+    q = (select(Intake)
+         .where(Intake.patient_key == patient_key, Intake.status == IntakeStatus.submitted)
+         .order_by(Intake.submitted_at.desc()))
+    if exclude_id:
+        q = q.where(Intake.id != exclude_id)
+    return list(db.scalars(q))
+
+
+def prefill_from(intake: Intake, source: Intake) -> None:
+    """Copy a returning patient's last answers (not consents) and card photos."""
+    answers = dict(load_form(source).get("answers", {}))
+    new_files = []
+    for f in source.files:
+        if f.kind in forms.file_field_keys():
+            data = read_encrypted_file(f.storage_key, f.id)
+            copy = store_encrypted_file(intake, f.kind, data, f.content_type)
+            new_files.append(copy)
+    for k in forms.file_field_keys():
+        answers.pop(k, None)
+    save_form(intake, {"answers": answers, "prefilled_from": source.id})
+    intake.prefilled_from_id = source.id
+    intake.files = new_files
 
 
 def load_form(intake: Intake) -> dict[str, Any]:

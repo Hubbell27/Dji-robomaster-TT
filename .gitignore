@@ -8,3 +8,7 @@ cdk.out/
 .env
 *.pem
 .pytest_cache/
+backups/
+office/.env
+office-ca.crt
+intake-keys*.json

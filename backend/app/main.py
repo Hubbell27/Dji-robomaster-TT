@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 import uuid
 from pathlib import Path
 
@@ -26,19 +27,29 @@ _CSP = (
 )
 
 
-async def _expiry_sweeper() -> None:
+async def _sweeper() -> None:
+    """Every 15 minutes: expire old links. Once a day: retention purge."""
+    from .retention import run_retention
+
+    last_purge = 0.0
     while True:
-        await asyncio.sleep(15 * 60)
         try:
             with get_sessionmaker()() as db:
                 await asyncio.to_thread(expire_stale_intakes, db)
+                if time.monotonic() - last_purge > 24 * 3600 or last_purge == 0.0:
+                    await asyncio.to_thread(run_retention, db)
+                    last_purge = time.monotonic()
         except Exception:  # keep sweeping even if one pass fails
-            log.exception("expiry sweep failed")
+            log.exception("background sweep failed")
+        await asyncio.sleep(15 * 60)
 
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(_expiry_sweeper()) if get_settings().environment != "test" else None
+    from .keys import check_keyfile_before_start
+
+    check_keyfile_before_start()
+    task = asyncio.create_task(_sweeper()) if get_settings().environment != "test" else None
     yield
     if task:
         task.cancel()
@@ -88,6 +99,7 @@ def create_app() -> FastAPI:
         """Non-secret values the SPA needs to start the Cognito sign-in flow."""
         return {
             "auth_mode": settings.auth_mode,
+            "deployment": settings.deployment,
             "cognito_domain": settings.cognito_domain,
             "cognito_client_id": settings.cognito_client_id,
         }
@@ -95,6 +107,10 @@ def create_app() -> FastAPI:
     app.include_router(patient.router)
     app.include_router(staff.router)
     app.include_router(admin.router)
+    if settings.auth_mode == "local":
+        from .routers import auth_local
+
+        app.include_router(auth_local.router)
     if settings.auth_mode == "dev":
         from .routers import dev
 

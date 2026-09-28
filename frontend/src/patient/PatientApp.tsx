@@ -26,6 +26,19 @@ function storage(): Storage | null {
   }
 }
 
+const LANG_KEY = "intake.lang";
+
+function initialLang(): Lang {
+  const m = window.location.hash.match(/[#&]l=(en|es)\b/);
+  if (m) {
+    storage()?.setItem(LANG_KEY, m[1]);
+    return m[1] as Lang;
+  }
+  const saved = storage()?.getItem(LANG_KEY);
+  if (saved === "en" || saved === "es") return saved;
+  return navigator.language.startsWith("es") ? "es" : "en";
+}
+
 function readLinkToken(): string | null {
   const m = window.location.hash.match(/[#&]t=([A-Za-z0-9_-]+)/);
   if (m) {
@@ -38,8 +51,8 @@ function readLinkToken(): string | null {
 }
 
 export function PatientApp() {
+  const [lang, setLang] = useState<Lang>(initialLang);
   const [linkToken] = useState(readLinkToken);
-  const [lang, setLang] = useState<Lang>(navigator.language.startsWith("es") ? "es" : "en");
   const [def, setDef] = useState<FormDefinition | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [phase, setPhase] = useState<"verify" | "form" | "done">("verify");
@@ -98,6 +111,7 @@ export function PatientApp() {
           <div className="card center">
             <h1>{t("doneTitle", lang)}</h1>
             <p>{t("doneBody", lang)}</p>
+            <p className="muted">{t("handBack", lang)}</p>
           </div>
         ) : !linkToken && !session ? (
           <div className="card center"><p>{t("noLink", lang)}</p></div>
@@ -165,6 +179,7 @@ function IntakeForm({ def, session, setSession, lang, setLang, onSessionLost, on
   onDone: () => void;
 }) {
   const [answers, setAnswers] = useState<Answers | null>(null);
+  const [prefilled, setPrefilled] = useState(false);
   const [files, setFiles] = useState<Record<string, string>>({});
   const [consents, setConsents] = useState<Record<string, ConsentValue>>(() =>
     Object.fromEntries(def.consents.map((c) => [c.key, { agreed: false, typed_name: "", relationship: "self", signature: null }])),
@@ -194,10 +209,11 @@ function IntakeForm({ def, session, setSession, lang, setLang, onSessionLost, on
 
   // Load the saved draft once. (Re-running this would overwrite unsaved edits.)
   useEffect(() => {
-    api<SessionInfo & { answers: Answers; files: { id: string; kind: string }[] }>("/api/patient/intake", { token: tokenRef.current })
+    api<SessionInfo & { answers: Answers; prefilled: boolean; files: { id: string; kind: string }[] }>("/api/patient/intake", { token: tokenRef.current })
       .then((r) => {
         tokenRef.current = r.session_token;
         setAnswers(r.answers);
+        setPrefilled(r.prefilled);
         setFiles(Object.fromEntries(r.files.map((f) => [f.kind, f.id])));
       })
       .catch((err) => authErrorRef.current(err));
@@ -295,6 +311,8 @@ function IntakeForm({ def, session, setSession, lang, setLang, onSessionLost, on
             {saveState === "saving" ? t("saving", lang) : saveState === "saved" ? t("saved", lang) : saveState === "error" ? t("saveFailed", lang) : ""}
           </span>
         </div>
+
+        {prefilled && step === 0 && <p className="notice">{t("prefilled", lang)}</p>}
 
         {errors.length > 0 && (
           <div className="error-box" role="alert">

@@ -6,15 +6,17 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, EmailStr, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import audit
+from .. import audit, passwords
 from ..auth import StaffContext, require_admin
 from ..config import get_settings
 from ..db import get_db
-from ..models import AuditEvent, Location, Role, StaffUser
+from ..models import AuditEvent, Location, Role, StaffUser, utcnow
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -59,11 +61,23 @@ def _cognito_set_enabled(email: str, enabled: bool) -> None:
 # ------------------------------------------------------------------------ staff
 
 
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
 class StaffIn(BaseModel):
-    email: EmailStr
+    email: str = Field(max_length=320)
     full_name: str = Field(min_length=1, max_length=200)
     role: Role = Role.front_desk
     location_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        # Offices often use internal domains (e.g. .local), so only check the shape.
+        v = v.strip().lower()
+        if not _EMAIL.match(v):
+            raise ValueError("enter a valid email address")
+        return v
 
 
 class StaffPatch(BaseModel):
@@ -73,9 +87,15 @@ class StaffPatch(BaseModel):
     location_ids: list[str] | None = None
 
 
+def _local() -> bool:
+    return get_settings().auth_mode == "local"
+
+
 def _staff_out(u: StaffUser) -> dict[str, Any]:
     return {"id": u.id, "email": u.email, "full_name": u.full_name, "role": u.role.value, "active": u.active,
-            "linked": u.cognito_sub is not None,
+            "linked": (u.totp_enabled if _local() else u.cognito_sub is not None),
+            "mfa_enabled": u.totp_enabled,
+            "locked": bool(u.locked_until and u.locked_until > utcnow()),
             "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
             "locations": [{"id": l.id, "name": l.name} for l in u.locations]}
 
@@ -100,13 +120,47 @@ def create_staff(body: StaffIn, request: Request, db: Session = Depends(get_db),
         raise HTTPException(status.HTTP_409_CONFLICT, "a staff user with that email already exists")
     user = StaffUser(email=email, full_name=body.full_name, role=body.role, active=True,
                      locations=_locations(db, body.location_ids))
+    temp = None
+    if _local():
+        temp = passwords.temporary_password()
+        user.password_hash = passwords.hash_password(temp)
+        user.must_change_password = True
     db.add(user)
     db.flush()
     _cognito_invite(email, body.full_name)
     db.commit()
     audit.record(request, ctx.actor, "admin.staff_created", resource_type="staff", resource_id=user.id,
                  details={"email": email, "role": body.role.value, "location_ids": body.location_ids})
-    return _staff_out(user)
+    # The temporary password is shown to the admin exactly once, never stored in plaintext.
+    return _staff_out(user) | ({"temporary_password": temp} if temp else {})
+
+
+class ResetIn(BaseModel):
+    reset_mfa: bool = False
+
+
+@router.post("/staff/{staff_id}/reset-password")
+def reset_password(staff_id: str, body: ResetIn, request: Request, db: Session = Depends(get_db),
+                   ctx: StaffContext = Depends(require_admin)) -> dict[str, Any]:
+    if not _local():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "password resets are handled by Cognito in this deployment")
+    user = db.get(StaffUser, staff_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "staff user not found")
+    temp = passwords.temporary_password()
+    user.password_hash = passwords.hash_password(temp)
+    user.must_change_password = True
+    user.failed_logins = 0
+    user.locked_until = None
+    user.session_version += 1
+    if body.reset_mfa:
+        user.totp_enabled = False
+        user.totp_secret_enc = None
+        user.totp_last_step = None
+    db.commit()
+    audit.record(request, ctx.actor, "admin.staff_password_reset", resource_type="staff", resource_id=user.id,
+                 details={"reset_mfa": body.reset_mfa})
+    return _staff_out(user) | {"temporary_password": temp}
 
 
 @router.patch("/staff/{staff_id}")
@@ -126,6 +180,7 @@ def update_staff(staff_id: str, body: StaffPatch, request: Request, db: Session 
         user.locations = _locations(db, body.location_ids)
     if body.active is not None and body.active != user.active:
         user.active = body.active
+        user.session_version += 1  # end any open sessions
         _cognito_set_enabled(user.email, body.active)
     db.commit()
     audit.record(request, ctx.actor, "admin.staff_updated", resource_type="staff", resource_id=user.id,
