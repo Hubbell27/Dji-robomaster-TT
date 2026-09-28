@@ -93,10 +93,11 @@ jobs:
           & $exe setup --office-name "Portable" --https-port 443 --public-host localhost --result-file C:\portable.txt
           if ($LASTEXITCODE -ne 0) { throw "portable setup failed" }
           $code = ((Get-Content C:\portable.txt) -match '^security_code=') -replace 'security_code=', ''
-          "portable server security code: $code"
+          $httpPort = ((Get-Content C:\portable.txt) -match '^http_port=') -replace 'http_port=', ''
+          "portable server security code: $code (certificate helper on port $httpPort)"
           $srv = Start-Process $exe -ArgumentList serve -PassThru -WindowStyle Hidden
           Start-Sleep 10
-          (Invoke-WebRequest -UseBasicParsing http://localhost/office-ca.crt).StatusCode
+          (Invoke-WebRequest -UseBasicParsing "http://localhost:$httpPort/office-ca.crt").StatusCode
 
           $p = Start-Process desktop\dist\DentalIntakeSetup.exe -Wait -PassThru -ArgumentList `
             '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=C:\ws-bad.log /ROLE=workstation /SERVER=localhost /CACODE=0000-0000-0000'
@@ -127,7 +128,8 @@ jobs:
           "service: $($svc.Status) / $($svc.StartType)"
           if ($svc.Status -ne "Running") { throw "service not running" }
           (Invoke-WebRequest -UseBasicParsing https://localhost/api/health).Content
-          if ((Invoke-WebRequest -UseBasicParsing http://localhost/office-ca.crt).Content -notmatch "BEGIN CERTIFICATE") { throw "CA download" }
+          $httpPort = ((Get-Content C:\result.txt) -match '^ca_http_port=') -replace 'ca_http_port=', ''
+          if ((Invoke-WebRequest -UseBasicParsing "http://localhost:$httpPort/office-ca.crt").Content -notmatch "BEGIN CERTIFICATE") { throw "CA download" }
           if (-not (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*CI Dental Dental Intake CA*')) { throw "CA not trusted" }
           netsh advfirewall firewall show rule name="Dental Intake HTTPS" | Select-String "LocalPort"
           $acl = (Get-Acl "C:\ProgramData\Dental Intake").Access | ForEach-Object { $_.IdentityReference.Value }

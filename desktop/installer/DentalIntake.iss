@@ -178,20 +178,30 @@ begin
   if P > 0 then Result := Copy(Result, 1, P - 1);
 end;
 
-function FetchOfficeCA(Addr: String): Boolean;
+function IsCertFile(Path: String): Boolean;
+var Content: AnsiString;
+begin
+  Result := LoadStringFromFile(Path, Content) and (Pos('-----BEGIN CERTIFICATE-----', Content) = 1);
+end;
+
+function TryFetch(Url: String): Boolean;
 begin
   Result := False;
   try
-    DownloadTemporaryFile('http://' + HostPart(Addr) + '/office-ca.crt', 'office-ca.crt', '', nil);
-    Result := True;
+    DownloadTemporaryFile(Url, 'office-ca.crt', '', nil);
+    // Another web server on port 80 may answer; only accept an actual certificate.
+    Result := IsCertFile(ExpandConstant('{tmp}\office-ca.crt'));
   except
-    try
-      DownloadTemporaryFile('http://' + HostPart(Addr) + ':8080/office-ca.crt', 'office-ca.crt', '', nil);
-      Result := True;
-    except
-      Result := False;
-    end;
+    Result := False;
   end;
+end;
+
+function FetchOfficeCA(Addr: String): Boolean;
+begin
+  // The main PC serves its certificate on port 80, or 8080 if 80 was taken.
+  Result := TryFetch('http://' + HostPart(Addr) + '/office-ca.crt');
+  if not Result then
+    Result := TryFetch('http://' + HostPart(Addr) + ':8080/office-ca.crt');
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -285,7 +295,7 @@ end;
 
 procedure InstallServer();
 var
-  Args, ResultFile, Account, Summary, NetworkAddr: String;
+  Args, ResultFile, Account, Summary, NetworkAddr, CaUrl: String;
   Lines: TArrayOfString;
   Code: Integer;
   Url, LocalUrl, HttpsPort, HttpPort, Code2, Temp, CaFile, BackupDir: String;
@@ -344,6 +354,9 @@ begin
 
   NetworkAddr := GetComputerNameString();
   if HttpsPort <> '443' then NetworkAddr := NetworkAddr + ':' + HttpsPort;
+  CaUrl := 'http://' + GetComputerNameString();
+  if HttpPort <> '80' then CaUrl := CaUrl + ':' + HttpPort;
+  CaUrl := CaUrl + '/office-ca.crt';
   Summary := 'Dental Intake is installed and running on this PC.' + #13#10#13#10;
   if Temp <> '' then
     Summary := Summary + 'FIRST SIGN-IN' + #13#10 +
@@ -360,11 +373,12 @@ begin
     '  Office security code to compare:  ' + Code2 + #13#10#13#10 +
     'TABLETS' + #13#10 +
     '  Patient links open at ' + Url + #13#10 +
-    '  On each office tablet, open http://' + GetComputerNameString() + '/office-ca.crt once and install it.';
+    '  On each office tablet, open ' + CaUrl + ' once and install it.';
   DonePage.RichEditViewer.Lines.Text := Summary;
   if Param('RESULTFILE', '') <> '' then
     SaveStringToFile(Param('RESULTFILE', ''), 'temporary_password=' + Temp + #13#10 + 'url=' + Url + #13#10 +
-      'local_url=' + LocalUrl + #13#10 + 'security_code=' + Code2 + #13#10 + 'network_address=' + NetworkAddr + #13#10, False);
+      'local_url=' + LocalUrl + #13#10 + 'security_code=' + Code2 + #13#10 + 'network_address=' + NetworkAddr + #13#10 +
+      'ca_http_port=' + HttpPort + #13#10, False);
 end;
 
 procedure InstallWorkstation();
