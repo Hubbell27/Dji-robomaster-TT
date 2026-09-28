@@ -1,0 +1,11 @@
+{
+  "app": "npx tsx bin/app.ts",
+  "context": {
+    "domainName": "intake.example-dental.com",
+    "hostedZoneName": "example-dental.com",
+    "alarmEmail": "",
+    "multiAz": true,
+    "createCloudTrail": true,
+    "cognitoDomainPrefix": "example-dental-intake"
+  }
+}

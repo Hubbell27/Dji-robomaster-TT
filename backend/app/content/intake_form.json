@@ -1,0 +1,260 @@
+{
+  "version": "2026-09-01",
+  "_note": "Single source of truth for the patient intake form. The React app renders it, the API validates against it, and the PDF is laid out from it. Field keys are stable identifiers; change labels freely but do not rename keys once in production. Spanish text is a draft and should be reviewed by a qualified translator before go-live.",
+  "sections": [
+    {
+      "key": "demographics",
+      "title": {"en": "Patient Information", "es": "Información del paciente"},
+      "fields": [
+        {"key": "first_name", "type": "text", "required": true, "max": 100, "label": {"en": "First name", "es": "Nombre"}},
+        {"key": "middle_name", "type": "text", "max": 100, "label": {"en": "Middle name", "es": "Segundo nombre"}},
+        {"key": "last_name", "type": "text", "required": true, "max": 100, "label": {"en": "Last name", "es": "Apellido"}},
+        {"key": "preferred_name", "type": "text", "max": 100, "label": {"en": "Preferred name", "es": "Nombre preferido"}},
+        {"key": "dob", "type": "date", "required": true, "readonly": true, "label": {"en": "Date of birth", "es": "Fecha de nacimiento"}},
+        {"key": "sex", "type": "select", "required": true, "label": {"en": "Sex assigned at birth", "es": "Sexo asignado al nacer"},
+          "options": [
+            {"value": "female", "label": {"en": "Female", "es": "Femenino"}},
+            {"value": "male", "label": {"en": "Male", "es": "Masculino"}},
+            {"value": "intersex", "label": {"en": "Intersex", "es": "Intersexual"}},
+            {"value": "decline", "label": {"en": "Prefer not to say", "es": "Prefiero no decir"}}
+          ]},
+        {"key": "pronouns", "type": "text", "max": 50, "label": {"en": "Pronouns (optional)", "es": "Pronombres (opcional)"}},
+        {"key": "address1", "type": "text", "required": true, "max": 200, "label": {"en": "Street address", "es": "Dirección"}},
+        {"key": "address2", "type": "text", "max": 200, "label": {"en": "Apt / Suite", "es": "Apto. / Unidad"}},
+        {"key": "city", "type": "text", "required": true, "max": 100, "label": {"en": "City", "es": "Ciudad"}},
+        {"key": "state", "type": "text", "required": true, "max": 50, "label": {"en": "State", "es": "Estado"}},
+        {"key": "zip", "type": "text", "required": true, "max": 10, "pattern": "^[0-9]{5}(-[0-9]{4})?$", "label": {"en": "ZIP code", "es": "Código postal"}},
+        {"key": "phone_mobile", "type": "tel", "required": true, "label": {"en": "Mobile phone", "es": "Teléfono celular"}},
+        {"key": "phone_other", "type": "tel", "label": {"en": "Other phone", "es": "Otro teléfono"}},
+        {"key": "email", "type": "email", "label": {"en": "Email", "es": "Correo electrónico"}},
+        {"key": "preferred_contact", "type": "select", "required": true, "label": {"en": "Preferred contact method", "es": "Método de contacto preferido"},
+          "options": [
+            {"value": "mobile_call", "label": {"en": "Mobile phone call", "es": "Llamada al celular"}},
+            {"value": "text", "label": {"en": "Text message", "es": "Mensaje de texto"}},
+            {"value": "email", "label": {"en": "Email", "es": "Correo electrónico"}},
+            {"value": "other_phone", "label": {"en": "Other phone", "es": "Otro teléfono"}}
+          ]},
+        {"key": "emergency_name", "type": "text", "required": true, "max": 200, "label": {"en": "Emergency contact name", "es": "Contacto de emergencia"}},
+        {"key": "emergency_relationship", "type": "text", "required": true, "max": 50, "label": {"en": "Relationship", "es": "Parentesco"}},
+        {"key": "emergency_phone", "type": "tel", "required": true, "label": {"en": "Emergency contact phone", "es": "Teléfono del contacto de emergencia"}},
+        {"key": "patient_is_responsible", "type": "yesno", "required": true, "label": {"en": "Is the patient the person responsible for payment?", "es": "¿Es el paciente la persona responsable del pago?"}},
+        {"key": "responsible_name", "type": "text", "required": true, "max": 200, "show_if": {"field": "patient_is_responsible", "equals": "no"}, "label": {"en": "Responsible party name", "es": "Nombre del responsable"}},
+        {"key": "responsible_relationship", "type": "text", "required": true, "max": 50, "show_if": {"field": "patient_is_responsible", "equals": "no"}, "label": {"en": "Relationship to patient", "es": "Parentesco con el paciente"}},
+        {"key": "responsible_phone", "type": "tel", "required": true, "show_if": {"field": "patient_is_responsible", "equals": "no"}, "label": {"en": "Responsible party phone", "es": "Teléfono del responsable"}},
+        {"key": "reason_for_visit", "type": "textarea", "max": 1000, "label": {"en": "Reason for today's visit", "es": "Motivo de la visita de hoy"}},
+        {"key": "previous_dentist", "type": "text", "max": 200, "label": {"en": "Previous dentist", "es": "Dentista anterior"}},
+        {"key": "last_dental_visit", "type": "text", "max": 100, "label": {"en": "Approximate date of last dental visit", "es": "Fecha aproximada de su última visita dental"}}
+      ]
+    },
+    {
+      "key": "medical_history",
+      "title": {"en": "Medical History", "es": "Historial médico"},
+      "fields": [
+        {"key": "physician_name", "type": "text", "max": 200, "label": {"en": "Primary care physician", "es": "Médico de cabecera"}},
+        {"key": "physician_phone", "type": "tel", "label": {"en": "Physician phone", "es": "Teléfono del médico"}},
+        {"key": "good_health", "type": "yesno", "required": true, "label": {"en": "Are you in good health?", "es": "¿Goza de buena salud?"}},
+        {"key": "under_care", "type": "yesno", "required": true, "label": {"en": "Are you currently under a physician's care?", "es": "¿Está actualmente bajo el cuidado de un médico?"}},
+        {"key": "under_care_detail", "type": "textarea", "max": 1000, "required": true, "show_if": {"field": "under_care", "equals": "yes"}, "label": {"en": "For what condition?", "es": "¿Por qué condición?"}},
+        {"key": "hospitalized", "type": "yesno", "required": true, "label": {"en": "Have you been hospitalized or had surgery in the past 5 years?", "es": "¿Ha sido hospitalizado o operado en los últimos 5 años?"}},
+        {"key": "hospitalized_detail", "type": "textarea", "max": 1000, "required": true, "show_if": {"field": "hospitalized", "equals": "yes"}, "label": {"en": "Please explain", "es": "Por favor explique"}},
+        {"key": "conditions", "type": "checkboxes", "label": {"en": "Do you have or have you had any of the following?", "es": "¿Tiene o ha tenido alguna de las siguientes condiciones?"},
+          "options": [
+            {"value": "heart_disease", "label": {"en": "Heart disease / heart attack", "es": "Enfermedad cardíaca / infarto"}},
+            {"value": "heart_murmur", "label": {"en": "Heart murmur", "es": "Soplo cardíaco"}},
+            {"value": "artificial_valve", "label": {"en": "Artificial heart valve", "es": "Válvula cardíaca artificial"}},
+            {"value": "pacemaker", "label": {"en": "Pacemaker / defibrillator", "es": "Marcapasos / desfibrilador"}},
+            {"value": "high_bp", "label": {"en": "High blood pressure", "es": "Presión arterial alta"}},
+            {"value": "low_bp", "label": {"en": "Low blood pressure", "es": "Presión arterial baja"}},
+            {"value": "stroke", "label": {"en": "Stroke", "es": "Derrame cerebral"}},
+            {"value": "rheumatic_fever", "label": {"en": "Rheumatic fever", "es": "Fiebre reumática"}},
+            {"value": "asthma", "label": {"en": "Asthma", "es": "Asma"}},
+            {"value": "copd", "label": {"en": "Emphysema / COPD", "es": "Enfisema / EPOC"}},
+            {"value": "tuberculosis", "label": {"en": "Tuberculosis", "es": "Tuberculosis"}},
+            {"value": "diabetes", "label": {"en": "Diabetes", "es": "Diabetes"}},
+            {"value": "thyroid", "label": {"en": "Thyroid disease", "es": "Enfermedad de la tiroides"}},
+            {"value": "kidney", "label": {"en": "Kidney disease", "es": "Enfermedad renal"}},
+            {"value": "liver", "label": {"en": "Liver disease / hepatitis", "es": "Enfermedad hepática / hepatitis"}},
+            {"value": "hiv", "label": {"en": "HIV / AIDS", "es": "VIH / SIDA"}},
+            {"value": "cancer", "label": {"en": "Cancer", "es": "Cáncer"}},
+            {"value": "radiation", "label": {"en": "Radiation therapy (head/neck)", "es": "Radioterapia (cabeza/cuello)"}},
+            {"value": "chemotherapy", "label": {"en": "Chemotherapy", "es": "Quimioterapia"}},
+            {"value": "bleeding_disorder", "label": {"en": "Bleeding disorder / easy bruising", "es": "Trastorno de sangrado / moretones fáciles"}},
+            {"value": "anemia", "label": {"en": "Anemia", "es": "Anemia"}},
+            {"value": "seizures", "label": {"en": "Epilepsy / seizures", "es": "Epilepsia / convulsiones"}},
+            {"value": "fainting", "label": {"en": "Fainting spells", "es": "Desmayos"}},
+            {"value": "arthritis", "label": {"en": "Arthritis", "es": "Artritis"}},
+            {"value": "joint_replacement", "label": {"en": "Artificial joint / joint replacement", "es": "Articulación artificial / reemplazo articular"}},
+            {"value": "osteoporosis", "label": {"en": "Osteoporosis", "es": "Osteoporosis"}},
+            {"value": "sleep_apnea", "label": {"en": "Sleep apnea", "es": "Apnea del sueño"}},
+            {"value": "anxiety_depression", "label": {"en": "Anxiety / depression", "es": "Ansiedad / depresión"}},
+            {"value": "gerd", "label": {"en": "Acid reflux / GERD", "es": "Reflujo ácido / ERGE"}},
+            {"value": "glaucoma", "label": {"en": "Glaucoma", "es": "Glaucoma"}}
+          ]},
+        {"key": "conditions_other", "type": "textarea", "max": 1000, "label": {"en": "Other conditions not listed", "es": "Otras condiciones no mencionadas"}},
+        {"key": "premed_antibiotics", "type": "yesno", "required": true, "label": {"en": "Has a physician told you to take antibiotics before dental treatment?", "es": "¿Algún médico le ha indicado tomar antibióticos antes del tratamiento dental?"}},
+        {"key": "bisphosphonates", "type": "yesno", "required": true, "label": {"en": "Have you ever taken bisphosphonates (e.g., Fosamax, Boniva, Prolia) for bone health?", "es": "¿Ha tomado alguna vez bifosfonatos (p. ej., Fosamax, Boniva, Prolia) para los huesos?"}},
+        {"key": "blood_thinners", "type": "yesno", "required": true, "label": {"en": "Do you take blood thinners (e.g., warfarin, Eliquis, daily aspirin)?", "es": "¿Toma anticoagulantes (p. ej., warfarina, Eliquis, aspirina diaria)?"}},
+        {"key": "tobacco", "type": "select", "required": true, "label": {"en": "Tobacco / nicotine use", "es": "Uso de tabaco / nicotina"},
+          "options": [
+            {"value": "never", "label": {"en": "Never", "es": "Nunca"}},
+            {"value": "former", "label": {"en": "Former", "es": "Anteriormente"}},
+            {"value": "current", "label": {"en": "Current", "es": "Actualmente"}}
+          ]},
+        {"key": "pregnant", "type": "select", "required": true, "label": {"en": "Are you pregnant or nursing?", "es": "¿Está embarazada o amamantando?"},
+          "options": [
+            {"value": "no", "label": {"en": "No", "es": "No"}},
+            {"value": "pregnant", "label": {"en": "Pregnant", "es": "Embarazada"}},
+            {"value": "nursing", "label": {"en": "Nursing", "es": "Amamantando"}},
+            {"value": "na", "label": {"en": "Not applicable", "es": "No aplica"}}
+          ]},
+        {"key": "dental_concerns", "type": "checkboxes", "label": {"en": "Dental concerns", "es": "Inquietudes dentales"},
+          "options": [
+            {"value": "sensitivity", "label": {"en": "Sensitive teeth", "es": "Dientes sensibles"}},
+            {"value": "bleeding_gums", "label": {"en": "Bleeding gums", "es": "Encías sangrantes"}},
+            {"value": "jaw_pain", "label": {"en": "Jaw pain / clicking (TMJ)", "es": "Dolor o chasquido de mandíbula (ATM)"}},
+            {"value": "grinding", "label": {"en": "Grinding / clenching", "es": "Rechinar / apretar los dientes"}},
+            {"value": "dry_mouth", "label": {"en": "Dry mouth", "es": "Boca seca"}},
+            {"value": "anxiety", "label": {"en": "Anxiety about dental visits", "es": "Ansiedad por las visitas dentales"}}
+          ]}
+      ]
+    },
+    {
+      "key": "medications",
+      "title": {"en": "Medications", "es": "Medicamentos"},
+      "fields": [
+        {"key": "taking_medications", "type": "yesno", "required": true, "label": {"en": "Do you currently take any prescription or over-the-counter medications, vitamins or supplements?", "es": "¿Toma actualmente algún medicamento recetado o de venta libre, vitaminas o suplementos?"}},
+        {"key": "medication_list", "type": "list", "required": true, "max_items": 50, "show_if": {"field": "taking_medications", "equals": "yes"},
+          "label": {"en": "Medications", "es": "Medicamentos"},
+          "add_label": {"en": "Add medication", "es": "Agregar medicamento"},
+          "item_fields": [
+            {"key": "name", "type": "text", "required": true, "max": 200, "label": {"en": "Medication", "es": "Medicamento"}},
+            {"key": "dose", "type": "text", "max": 100, "label": {"en": "Dose", "es": "Dosis"}},
+            {"key": "frequency", "type": "text", "max": 100, "label": {"en": "How often", "es": "Frecuencia"}},
+            {"key": "reason", "type": "text", "max": 200, "label": {"en": "Reason", "es": "Motivo"}}
+          ]}
+      ]
+    },
+    {
+      "key": "allergies",
+      "title": {"en": "Allergies", "es": "Alergias"},
+      "fields": [
+        {"key": "has_allergies", "type": "yesno", "required": true, "label": {"en": "Do you have any allergies (medications, latex, foods, metals, etc.)?", "es": "¿Tiene alguna alergia (medicamentos, látex, alimentos, metales, etc.)?"}},
+        {"key": "common_allergies", "type": "checkboxes", "show_if": {"field": "has_allergies", "equals": "yes"}, "label": {"en": "Check all that apply", "es": "Marque todas las que correspondan"},
+          "options": [
+            {"value": "penicillin", "label": {"en": "Penicillin / amoxicillin", "es": "Penicilina / amoxicilina"}},
+            {"value": "other_antibiotics", "label": {"en": "Other antibiotics", "es": "Otros antibióticos"}},
+            {"value": "local_anesthetic", "label": {"en": "Local anesthetics (e.g., lidocaine)", "es": "Anestésicos locales (p. ej., lidocaína)"}},
+            {"value": "latex", "label": {"en": "Latex", "es": "Látex"}},
+            {"value": "aspirin", "label": {"en": "Aspirin", "es": "Aspirina"}},
+            {"value": "nsaids", "label": {"en": "Ibuprofen / NSAIDs", "es": "Ibuprofeno / AINE"}},
+            {"value": "opioids", "label": {"en": "Codeine / opioids", "es": "Codeína / opioides"}},
+            {"value": "sulfa", "label": {"en": "Sulfa drugs", "es": "Sulfas"}},
+            {"value": "metals", "label": {"en": "Metals (e.g., nickel)", "es": "Metales (p. ej., níquel)"}},
+            {"value": "acrylic", "label": {"en": "Acrylic", "es": "Acrílico"}}
+          ]},
+        {"key": "allergy_list", "type": "list", "max_items": 50, "show_if": {"field": "has_allergies", "equals": "yes"},
+          "label": {"en": "Allergy details (include any not listed above)", "es": "Detalles de alergias (incluya las no mencionadas arriba)"},
+          "add_label": {"en": "Add allergy", "es": "Agregar alergia"},
+          "item_fields": [
+            {"key": "allergen", "type": "text", "required": true, "max": 200, "label": {"en": "Allergen", "es": "Alérgeno"}},
+            {"key": "reaction", "type": "text", "max": 200, "label": {"en": "Reaction", "es": "Reacción"}},
+            {"key": "severity", "type": "select", "label": {"en": "Severity", "es": "Gravedad"},
+              "options": [
+                {"value": "mild", "label": {"en": "Mild", "es": "Leve"}},
+                {"value": "moderate", "label": {"en": "Moderate", "es": "Moderada"}},
+                {"value": "severe", "label": {"en": "Severe / anaphylaxis", "es": "Grave / anafilaxia"}}
+              ]}
+          ]}
+      ]
+    },
+    {
+      "key": "insurance",
+      "title": {"en": "Dental Insurance", "es": "Seguro dental"},
+      "fields": [
+        {"key": "has_insurance", "type": "yesno", "required": true, "label": {"en": "Do you have dental insurance?", "es": "¿Tiene seguro dental?"}},
+        {"key": "primary_carrier", "type": "text", "required": true, "max": 200, "show_if": {"field": "has_insurance", "equals": "yes"}, "label": {"en": "Insurance company", "es": "Compañía de seguros"}},
+        {"key": "primary_member_id", "type": "text", "required": true, "max": 100, "show_if": {"field": "has_insurance", "equals": "yes"}, "label": {"en": "Member / subscriber ID", "es": "ID de miembro / suscriptor"}},
+        {"key": "primary_group", "type": "text", "max": 100, "show_if": {"field": "has_insurance", "equals": "yes"}, "label": {"en": "Group number", "es": "Número de grupo"}},
+        {"key": "primary_subscriber_name", "type": "text", "required": true, "max": 200, "show_if": {"field": "has_insurance", "equals": "yes"}, "label": {"en": "Subscriber (policy holder) name", "es": "Nombre del titular de la póliza"}},
+        {"key": "primary_subscriber_relationship", "type": "select", "required": true, "show_if": {"field": "has_insurance", "equals": "yes"}, "label": {"en": "Patient's relationship to subscriber", "es": "Parentesco del paciente con el titular"},
+          "options": [
+            {"value": "self", "label": {"en": "Self", "es": "El mismo"}},
+            {"value": "spouse", "label": {"en": "Spouse", "es": "Cónyuge"}},
+            {"value": "child", "label": {"en": "Child", "es": "Hijo(a)"}},
+            {"value": "other", "label": {"en": "Other", "es": "Otro"}}
+          ]},
+        {"key": "primary_subscriber_dob", "type": "date", "required": true, "show_if": {"field": "has_insurance", "equals": "yes"}, "label": {"en": "Subscriber date of birth", "es": "Fecha de nacimiento del titular"}},
+        {"key": "primary_employer", "type": "text", "max": 200, "show_if": {"field": "has_insurance", "equals": "yes"}, "label": {"en": "Subscriber employer", "es": "Empleador del titular"}},
+        {"key": "primary_card_front", "type": "file", "required": true, "show_if": {"field": "has_insurance", "equals": "yes"}, "label": {"en": "Photo of insurance card — front", "es": "Foto de la tarjeta del seguro — frente"}},
+        {"key": "primary_card_back", "type": "file", "required": true, "show_if": {"field": "has_insurance", "equals": "yes"}, "label": {"en": "Photo of insurance card — back", "es": "Foto de la tarjeta del seguro — reverso"}},
+        {"key": "has_secondary", "type": "yesno", "required": true, "show_if": {"field": "has_insurance", "equals": "yes"}, "label": {"en": "Do you have secondary dental insurance?", "es": "¿Tiene un seguro dental secundario?"}},
+        {"key": "secondary_carrier", "type": "text", "required": true, "max": 200, "show_if": {"field": "has_secondary", "equals": "yes"}, "label": {"en": "Secondary insurance company", "es": "Compañía de seguro secundario"}},
+        {"key": "secondary_member_id", "type": "text", "required": true, "max": 100, "show_if": {"field": "has_secondary", "equals": "yes"}, "label": {"en": "Secondary member ID", "es": "ID de miembro secundario"}},
+        {"key": "secondary_group", "type": "text", "max": 100, "show_if": {"field": "has_secondary", "equals": "yes"}, "label": {"en": "Secondary group number", "es": "Número de grupo secundario"}},
+        {"key": "secondary_subscriber_name", "type": "text", "required": true, "max": 200, "show_if": {"field": "has_secondary", "equals": "yes"}, "label": {"en": "Secondary subscriber name", "es": "Nombre del titular secundario"}},
+        {"key": "secondary_subscriber_dob", "type": "date", "required": true, "show_if": {"field": "has_secondary", "equals": "yes"}, "label": {"en": "Secondary subscriber date of birth", "es": "Fecha de nacimiento del titular secundario"}},
+        {"key": "secondary_card_front", "type": "file", "required": true, "show_if": {"field": "has_secondary", "equals": "yes"}, "label": {"en": "Secondary card — front", "es": "Tarjeta secundaria — frente"}},
+        {"key": "secondary_card_back", "type": "file", "required": true, "show_if": {"field": "has_secondary", "equals": "yes"}, "label": {"en": "Secondary card — back", "es": "Tarjeta secundaria — reverso"}}
+      ]
+    }
+  ],
+  "consents": [
+    {
+      "key": "treatment",
+      "title": {"en": "Consent for Dental Examination and Treatment", "es": "Consentimiento para examen y tratamiento dental"},
+      "body": {
+        "en": [
+          "I authorize the dentist and clinical staff of this practice to perform a dental examination, which may include radiographs (x-rays), photographs, and other diagnostic aids needed to evaluate my oral health.",
+          "I understand that a treatment plan, including its risks, benefits, alternatives, and estimated costs, will be explained to me before any treatment beyond the examination and routine cleaning is started, and that I may accept or decline any recommended treatment.",
+          "I have answered the health history questions truthfully and completely to the best of my knowledge. I understand that withholding information could put my health at risk, and I agree to inform the practice of any changes to my health or medications."
+        ],
+        "es": [
+          "Autorizo al dentista y al personal clínico de esta práctica a realizar un examen dental, que puede incluir radiografías, fotografías y otras ayudas diagnósticas necesarias para evaluar mi salud bucal.",
+          "Entiendo que se me explicará un plan de tratamiento, incluidos sus riesgos, beneficios, alternativas y costos estimados, antes de iniciar cualquier tratamiento adicional al examen y la limpieza de rutina, y que puedo aceptar o rechazar cualquier tratamiento recomendado.",
+          "He respondido las preguntas del historial de salud de manera veraz y completa según mi leal saber y entender. Entiendo que ocultar información podría poner en riesgo mi salud y me comprometo a informar a la práctica sobre cualquier cambio en mi salud o medicamentos."
+        ]
+      }
+    },
+    {
+      "key": "privacy",
+      "title": {"en": "Acknowledgment of Notice of Privacy Practices", "es": "Acuse de recibo del Aviso de prácticas de privacidad"},
+      "body": {
+        "en": [
+          "I acknowledge that I have been offered a copy of this practice's Notice of Privacy Practices, which describes how my protected health information may be used and disclosed and how I can access it, as required by the Health Insurance Portability and Accountability Act (HIPAA).",
+          "I understand that I may request a paper copy of the Notice at any time and that the practice may revise the Notice, with the current version available at the front desk and on request."
+        ],
+        "es": [
+          "Reconozco que se me ha ofrecido una copia del Aviso de prácticas de privacidad de esta práctica, que describe cómo se puede usar y divulgar mi información médica protegida y cómo puedo acceder a ella, según lo exige la Ley de Portabilidad y Responsabilidad del Seguro Médico (HIPAA).",
+          "Entiendo que puedo solicitar una copia impresa del Aviso en cualquier momento y que la práctica puede revisar el Aviso; la versión vigente está disponible en la recepción y a solicitud."
+        ]
+      }
+    },
+    {
+      "key": "financial",
+      "title": {"en": "Financial Policy and Assignment of Benefits", "es": "Política financiera y cesión de beneficios"},
+      "body": {
+        "en": [
+          "I understand that I am financially responsible for all charges for services provided, regardless of insurance coverage. Payment for any portion not covered by insurance, including deductibles and co-payments, is due at the time of service unless other arrangements have been made.",
+          "I authorize payment of dental benefits directly to this practice and authorize the release of information necessary to process my insurance claims. Insurance estimates are not a guarantee of payment."
+        ],
+        "es": [
+          "Entiendo que soy financieramente responsable de todos los cargos por los servicios prestados, independientemente de la cobertura del seguro. El pago de cualquier parte no cubierta por el seguro, incluidos deducibles y copagos, se debe realizar en el momento del servicio, a menos que se hayan hecho otros arreglos.",
+          "Autorizo el pago de los beneficios dentales directamente a esta práctica y autorizo la divulgación de la información necesaria para procesar mis reclamaciones de seguro. Los cálculos estimados del seguro no garantizan el pago."
+        ]
+      }
+    }
+  ],
+  "ui": {
+    "signer_relationship": {
+      "label": {"en": "I am signing as", "es": "Firmo como"},
+      "options": [
+        {"value": "self", "label": {"en": "The patient", "es": "El paciente"}},
+        {"value": "parent", "label": {"en": "Parent of the patient", "es": "Padre/madre del paciente"}},
+        {"value": "guardian", "label": {"en": "Legal guardian / representative", "es": "Tutor legal / representante"}}
+      ]
+    },
+    "agree": {"en": "I have read and agree to the above.", "es": "He leído y acepto lo anterior."},
+    "typed_name": {"en": "Type your full legal name", "es": "Escriba su nombre legal completo"},
+    "draw_signature": {"en": "Sign below", "es": "Firme abajo"}
+  }
+}

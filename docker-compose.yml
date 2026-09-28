@@ -1,0 +1,26 @@
+# Local development only. Uses dev auth, a local encryption key and local file
+# storage; the app refuses these settings when INTAKE_ENVIRONMENT=production.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: intake
+      POSTGRES_PASSWORD: intake
+      POSTGRES_DB: intake
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+  app:
+    build: .
+    depends_on: [db]
+    ports: ["8000:8000"]
+    environment:
+      INTAKE_ENVIRONMENT: development
+      INTAKE_DATABASE_URL: postgresql+psycopg://intake:intake@db:5432/intake
+      INTAKE_DATABASE_SSLMODE: disable
+      INTAKE_AUTH_MODE: dev
+      INTAKE_KEY_PROVIDER: local
+      INTAKE_STORAGE_BACKEND: local
+      INTAKE_LOCAL_STORAGE_DIR: /tmp/intake-files
+      INTAKE_PUBLIC_BASE_URL: http://localhost:8000
+volumes:
+  pgdata:
