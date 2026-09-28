@@ -11,19 +11,21 @@ and every access to patient data is audit-logged.
 - **Frontend:** React 19 + TypeScript (Vite). One SPA serves both the patient portal (`/intake`) and the staff dashboard (`/staff`).
 - **AWS:** ECS Fargate behind an ALB with WAF, RDS PostgreSQL, S3 (SSE-KMS), KMS, Cognito (required MFA), Secrets Manager, CloudWatch and CloudTrail, defined in AWS CDK (`infra/`)
 
-## Two ways to run it
+## Three ways to run it
 
-| | **Office PC** (`docker-compose.office.yml`) | **AWS** (`infra/`) |
-| --- | --- | --- |
-| Best for | Getting started; in-office check-in on tablets and office PCs | Patients completing forms from home; several offices |
-| Install | Docker Desktop + double-click `office/Start Dental Intake.bat` | `cdk deploy` |
-| Staff login | Password + authenticator app (built in) | Amazon Cognito + authenticator app |
-| Encryption keys | Key file generated on the PC (export to USB) | AWS KMS |
-| HTTPS | Caddy with an office certificate (or Let's Encrypt with a domain) | ACM certificate on the load balancer |
-| Backups | Nightly database + files backup to `backups/` | RDS point-in-time recovery + S3 versioning |
+| | **Windows program** (`desktop/`) | **Office PC with Docker** (`docker-compose.office.yml`) | **AWS** (`infra/`) |
+| --- | --- | --- | --- |
+| Best for | Most offices: several Windows PCs, one holds the data | Mac/Linux office servers | Patients completing forms from home; many offices |
+| Install | `DentalIntakeSetup.exe` (Next, Next, Finish) | Docker Desktop + `office/office.sh start` | `cdk deploy` |
+| Runs as | Windows service + desktop icon, app window, tray icon | Docker containers | ECS Fargate |
+| Staff login | Password + authenticator app | Password + authenticator app | Cognito + authenticator app |
+| Database | Built-in (SQLite) on the main PC | PostgreSQL container | RDS PostgreSQL |
+| HTTPS | Office CA, auto-trusted on every PC by the installer | Caddy | ACM |
+| Backups | Nightly, to this PC or a shared drive | Nightly, to `backups/` | RDS PITR + S3 versioning |
 
-**Running it in the office?** Start with **[docs/OFFICE_GUIDE.md](docs/OFFICE_GUIDE.md)**,
-which covers install, first sign-in, the daily routine, backups and troubleshooting.
+**Windows offices:** download `DentalIntakeSetup.exe` from the latest successful **CI** run
+(*Actions → CI → Artifacts → DentalIntakeSetup*) and follow **[docs/WINDOWS_GUIDE.md](docs/WINDOWS_GUIDE.md)**.
+The guide is also bundled with the program; open it from the tray icon's *Help* item.
 
 See [`docs/HIPAA.md`](docs/HIPAA.md) for how each requirement is met and what
 the practice must still do (BAA, policies, reviews).
@@ -128,7 +130,8 @@ Database migrations run automatically when each task starts (`alembic upgrade he
 ```
 backend/   FastAPI app (app/), Alembic migrations, pytest suite
 frontend/  React SPA: src/patient (intake portal), src/staff (dashboard/admin)
-office/    Office-PC install: control scripts (Windows/Mac/Linux), Caddyfile, backup script
+desktop/   Windows edition: service runner, certificates, backups, app window + tray, installer
+office/    Docker office install: control scripts, Caddyfile, backup script
 infra/     AWS CDK stack (TypeScript)
 docs/      Office guide, HIPAA safeguards and operator responsibilities
 ```
