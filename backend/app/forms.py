@@ -26,7 +26,12 @@ LANGUAGES = ("en", "es")
 
 @lru_cache
 def form_definition() -> dict[str, Any]:
-    return json.loads(_DEF_PATH.read_text(encoding="utf-8"))
+    """The bundled form, or the office's edited copy if INTAKE_FORM_DEFINITION_PATH is set."""
+    from .config import get_settings
+
+    override = get_settings().form_definition_path
+    path = Path(override) if override and Path(override).exists() else _DEF_PATH
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def all_fields() -> list[dict[str, Any]]:

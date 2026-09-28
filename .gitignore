@@ -12,3 +12,6 @@ backups/
 office/.env
 office-ca.crt
 intake-keys*.json
+desktop/dist/
+desktop/build/
+desktop/build-assets/

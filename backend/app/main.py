@@ -27,8 +27,18 @@ _CSP = (
 )
 
 
+def _nightly_backup() -> None:
+    s = get_settings()
+    if not s.backup_dir:
+        return
+    from . import backup
+
+    if backup._local_now().hour >= s.backup_hour and not backup.backed_up_today():
+        backup.run_backup(reason="scheduled")
+
+
 async def _sweeper() -> None:
-    """Every 15 minutes: expire old links. Once a day: retention purge."""
+    """Every 5 minutes: expire old links; nightly backup when due. Daily: retention purge."""
     from .retention import run_retention
 
     last_purge = 0.0
@@ -39,9 +49,10 @@ async def _sweeper() -> None:
                 if time.monotonic() - last_purge > 24 * 3600 or last_purge == 0.0:
                     await asyncio.to_thread(run_retention, db)
                     last_purge = time.monotonic()
+            await asyncio.to_thread(_nightly_backup)
         except Exception:  # keep sweeping even if one pass fails
             log.exception("background sweep failed")
-        await asyncio.sleep(15 * 60)
+        await asyncio.sleep(5 * 60)
 
 
 @contextlib.asynccontextmanager

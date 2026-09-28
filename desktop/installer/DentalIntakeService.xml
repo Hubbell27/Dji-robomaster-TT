@@ -1,0 +1,20 @@
+<!-- Windows service definition (WinSW). Installed by DentalIntakeSetup.exe. -->
+<service>
+  <id>DentalIntake</id>
+  <name>Dental Intake</name>
+  <description>Dental Intake patient forms server. Stopping it takes the dashboard and patient links offline.</description>
+  <executable>%BASE%\DentalIntakeServer.exe</executable>
+  <arguments>serve</arguments>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="2 min"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>20 sec</stoptimeout>
+  <logpath>%ProgramData%\Dental Intake\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>

@@ -45,7 +45,9 @@ def client_ip(request: Request | None) -> str | None:
         return None
     # Behind the ALB the real client address is the right-most XFF entry;
     # anything to its left is client-supplied and untrusted.
-    xff = request.headers.get("x-forwarded-for")
+    from .config import get_settings
+
+    xff = request.headers.get("x-forwarded-for") if get_settings().trust_forwarded_for else None
     if xff:
         return xff.split(",")[-1].strip()[:64]
     return request.client.host if request.client else None

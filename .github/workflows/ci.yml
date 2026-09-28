@@ -65,3 +65,120 @@ jobs:
           docker compose -f docker-compose.office.yml --env-file office/.env config --quiet
       - name: office image builds
         run: docker build -t dental-intake-app:ci .
+
+  windows:
+    # Builds DentalIntakeSetup.exe and really installs it on a Windows machine.
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults: { run: { shell: pwsh } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Desktop unit tests
+        run: |
+          python -m pip install -r desktop/requirements.txt pytest httpx
+          python -m pytest -q desktop/tests
+      - name: Build installer
+        run: ./desktop/build_windows.ps1
+
+      - name: "Connect-to-office-PC install: wrong security code is refused"
+        run: |
+          $env:DENTAL_INTAKE_HOME = "C:\portable-server"
+          $exe = "desktop\dist\DentalIntake\DentalIntakeServer.exe"
+          & $exe setup --office-name "Portable" --https-port 443 --public-host localhost --result-file C:\portable.txt
+          if ($LASTEXITCODE -ne 0) { throw "portable setup failed" }
+          $code = ((Get-Content C:\portable.txt) -match '^security_code=') -replace 'security_code=', ''
+          "portable server security code: $code"
+          $srv = Start-Process $exe -ArgumentList serve -PassThru -WindowStyle Hidden
+          Start-Sleep 10
+          (Invoke-WebRequest -UseBasicParsing http://localhost/office-ca.crt).StatusCode
+
+          $p = Start-Process desktop\dist\DentalIntakeSetup.exe -Wait -PassThru -ArgumentList `
+            '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=C:\ws-bad.log /ROLE=workstation /SERVER=localhost /CACODE=0000-0000-0000'
+          if (Test-Path "C:\Program Files\Dental Intake\client.json") { throw "installed despite wrong security code" }
+          "wrong code refused (exit $($p.ExitCode))"
+
+          $p = Start-Process desktop\dist\DentalIntakeSetup.exe -Wait -PassThru -ArgumentList `
+            "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=C:\ws.log /ROLE=workstation /SERVER=localhost /CACODE=$code"
+          if ($p.ExitCode -ne 0) { throw "workstation install failed: $($p.ExitCode)" }
+          $client = Get-Content "C:\Program Files\Dental Intake\client.json" | ConvertFrom-Json
+          if ($client.role -ne "workstation" -or $client.url -ne "https://localhost/staff") { throw "bad client.json" }
+          # Trusted through the Windows certificate store the installer updated (no -SkipCertificateCheck).
+          $r = Invoke-WebRequest -UseBasicParsing https://localhost/api/health
+          if ($r.StatusCode -ne 200) { throw "workstation cannot reach server over trusted HTTPS" }
+          if (-not (Test-Path "$env:PUBLIC\Desktop\Dental Intake.lnk")) { throw "desktop shortcut missing" }
+          Start-Process "C:\Program Files\Dental Intake\unins000.exe" -Wait -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES'
+          Stop-Process $srv -Force
+          Start-Sleep 3
+          if (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*Dental Intake CA*') { throw "CA not removed on uninstall" }
+          "workstation install OK"
+
+      - name: "Main office PC install: service, HTTPS, firewall, permissions"
+        run: |
+          $p = Start-Process desktop\dist\DentalIntakeSetup.exe -Wait -PassThru -ArgumentList `
+            '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=C:\install.log /ROLE=server /OFFICE="CI Dental" /ADMINNAME="CI Admin" /ADMINEMAIL=admin@ci.test /RESULTFILE=C:\result.txt'
+          if ($p.ExitCode -ne 0) { throw "server install failed: $($p.ExitCode)" }
+          $svc = Get-Service DentalIntake
+          "service: $($svc.Status) / $($svc.StartType)"
+          if ($svc.Status -ne "Running") { throw "service not running" }
+          (Invoke-WebRequest -UseBasicParsing https://localhost/api/health).Content
+          if ((Invoke-WebRequest -UseBasicParsing http://localhost/office-ca.crt).Content -notmatch "BEGIN CERTIFICATE") { throw "CA download" }
+          if (-not (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*CI Dental Dental Intake CA*')) { throw "CA not trusted" }
+          netsh advfirewall firewall show rule name="Dental Intake HTTPS" | Select-String "LocalPort"
+          $acl = (Get-Acl "C:\ProgramData\Dental Intake").Access | ForEach-Object { $_.IdentityReference.Value }
+          "data folder access: $($acl -join ', ')"
+          if ($acl -match 'Users') { throw "data folder readable by ordinary users" }
+          if (-not (Test-Path "C:\ProgramData\Dental Intake\keys\intake-keys.json")) { throw "key file missing" }
+
+      - name: Full patient visit against the installed service
+        run: |
+          $temp = ((Get-Content C:\result.txt) -match '^temporary_password=') -replace 'temporary_password=', ''
+          python desktop\tests\windows_e2e.py --base https://localhost --ca "C:\ProgramData\Dental Intake\tls\office-ca.crt" --email admin@ci.test --temp-password $temp
+          if ($LASTEXITCODE -ne 0) { throw "e2e failed" }
+
+      - name: Backup, restart, tray icon, upgrade, uninstall
+        run: |
+          $server = "C:\Program Files\Dental Intake\DentalIntakeServer.exe"
+          & $server backup; if ($LASTEXITCODE -ne 0) { throw "backup failed" }
+          $zip = Get-ChildItem "C:\ProgramData\Dental Intake\backups\intake-backup-*.zip" | Select-Object -First 1
+          "backup: $($zip.Name) $($zip.Length) bytes"
+          Restart-Service DentalIntake
+          Start-Sleep 8
+          (Invoke-WebRequest -UseBasicParsing https://localhost/api/health).StatusCode
+          & $server status
+
+          $tray = Start-Process "C:\Program Files\Dental Intake\Dental Intake.exe" -ArgumentList tray -PassThru
+          Start-Sleep 8
+          if ($tray.HasExited) { throw "tray exited with $($tray.ExitCode)" }
+          Stop-Process $tray -Force
+          "tray OK"
+
+          # Upgrade in place keeps settings and data.
+          $p = Start-Process desktop\dist\DentalIntakeSetup.exe -Wait -PassThru -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=C:\upgrade.log'
+          if ($p.ExitCode -ne 0) { throw "upgrade failed" }
+          Start-Sleep 8
+          (Invoke-WebRequest -UseBasicParsing https://localhost/api/health).StatusCode
+          & $server status | Select-String "submitted"
+
+          Start-Process "C:\Program Files\Dental Intake\unins000.exe" -Wait -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES'
+          Start-Sleep 3
+          if (Get-Service DentalIntake -ErrorAction SilentlyContinue) { throw "service not removed" }
+          if (-not (Test-Path "C:\ProgramData\Dental Intake\intake.db")) { throw "office data should be kept on uninstall" }
+          "uninstall OK (data kept)"
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          Get-Content C:\install.log, C:\ws.log, C:\ws-bad.log, C:\upgrade.log -ErrorAction SilentlyContinue | Select-Object -Last 150
+          Get-ChildItem "C:\ProgramData\Dental Intake\logs" -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName -Tail 60 }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DentalIntakeSetup
+          path: desktop/dist/DentalIntakeSetup.exe
+          if-no-files-found: ignore

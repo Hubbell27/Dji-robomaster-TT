@@ -38,6 +38,9 @@ class Settings(BaseSettings):
 
     # Public origin used to build patient links, e.g. https://intake.example-dental.com
     public_base_url: str = "http://localhost:5173"
+    # Trust X-Forwarded-For for client IPs (true behind the AWS ALB or Caddy; the
+    # Windows edition serves clients directly and turns this off).
+    trust_forwarded_for: bool = True
     # Office time zone; defines "today" on the dashboard.
     office_timezone: str = "America/New_York"
 
@@ -87,6 +90,15 @@ class Settings(BaseSettings):
     retention_years: int = 10
     # Unfinished forms (expired / cancelled / locked) are purged after this many days.
     draft_retention_days: int = 90
+
+    # --- Built-in backups (Windows desktop edition) ------------------------------
+    # Folder for nightly backups: local path or a shared drive (\\server\share\...).
+    backup_dir: str = ""
+    backup_hour: int = 21
+    backup_keep_days: int = 30
+
+    # Optional office-edited copy of the form definition (JSON).
+    form_definition_path: str = ""
 
     # Serve the built React app from this directory if it exists.
     static_dir: str = "./static"
