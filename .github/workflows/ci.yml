@@ -177,7 +177,7 @@ jobs:
         if: failure()
         run: |
           Get-Content C:\install.log, C:\ws.log, C:\upgrade.log -ErrorAction SilentlyContinue | Select-Object -Last 120
-          Get-Content C:\unins-ws.log, C:\unins.log -ErrorAction SilentlyContinue | Select-Object -Last 60
+          Get-Content C:\unins-ws.log, C:\unins.log -ErrorAction SilentlyContinue | Select-String -Pattern 'Run|exit|error|fail' -CaseSensitive:$false | Select-Object -First 60
           Get-ChildItem "C:\ProgramData\Dental Intake\logs" -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName -Tail 60 }
       - uses: actions/upload-artifact@v4
         if: always()

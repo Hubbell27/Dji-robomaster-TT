@@ -48,8 +48,8 @@ Filename: "{app}\Dental Intake.exe"; Parameters: "tray"; Flags: nowait postinsta
 Filename: "{app}\Dental Intake.exe"; Flags: nowait postinstall runasoriginaluser skipifsilent; Description: "Open Dental Intake now"
 
 [UninstallRun]
-Filename: "{app}\DentalIntakeService.exe"; Parameters: "stop"; RunOnceId: "StopService"; Flags: runhidden waituntilterminated; Check: IsServerInstall
-Filename: "{app}\DentalIntakeService.exe"; Parameters: "uninstall"; RunOnceId: "RemoveService"; Flags: runhidden waituntilterminated; Check: IsServerInstall
+Filename: "{app}\DentalIntakeService.exe"; Parameters: "stop"; RunOnceId: "StopService"; Flags: runhidden waituntilterminated; Check: SelectedServer
+Filename: "{app}\DentalIntakeService.exe"; Parameters: "uninstall"; RunOnceId: "RemoveService"; Flags: runhidden waituntilterminated; Check: SelectedServer
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Dental Intake HTTPS"""; RunOnceId: "FwHttps"; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Dental Intake HTTP"""; RunOnceId: "FwHttp"; Flags: runhidden
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\remove-office-ca.ps1"""; RunOnceId: "RemoveCA"; Flags: runhidden waituntilterminated
@@ -89,14 +89,6 @@ begin
     Result := ExistingRole <> 'workstation'
   else
     Result := RolePage.SelectedValueIndex = 0;
-end;
-
-function IsServerInstall(): Boolean;
-var Role: String;
-begin
-  Result := True;
-  if RegQueryStringValue(HKLM, RegKey, 'Role', Role) then
-    Result := Role = 'server';
 end;
 
 function JsonEscape(S: String): String;
