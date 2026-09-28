@@ -88,7 +88,8 @@ def run_backup(dest: str | None = None, reason: str = "scheduled") -> Path:
                     "created_at": utcnow().isoformat(), "reason": reason, "files": file_count,
                     "format": 1, "note": "Encrypted data. Requires the office key file (not included) to read.",
                 }, indent=2))
-            with open(partial, "rb") as f:
+            # Flush to disk before the rename (Windows needs a writable handle for fsync).
+            with open(partial, "r+b") as f:
                 os.fsync(f.fileno())
         os.replace(partial, final)
         _prune(dest_dir, s.backup_keep_days)
