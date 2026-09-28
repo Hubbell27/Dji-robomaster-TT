@@ -101,11 +101,12 @@ case "${1:-help}" in
     [ "$ok" = "RESTORE" ] || { echo "Cancelled."; exit 1; }
     "${DC[@]}" stop app
     "${DC[@]}" exec -T db sh -c 'dropdb -U intake --if-exists intake_restore_old; psql -U intake -d postgres -c "ALTER DATABASE intake RENAME TO intake_restore_old" && createdb -U intake intake'
-    "${DC[@]}" run --rm --no-deps -v "$(cd "$(dirname "$dump")" && pwd)":/restore:ro --entrypoint pg_restore backup \
-      --no-owner -d intake "/restore/$(basename "$dump")"
+    "${DC[@]}" run --rm --no-deps -v "$(cd "$(dirname "$dump")" && pwd)/$(basename "$dump")":/restore/db.dump:ro \
+      --entrypoint pg_restore backup --no-owner -d intake /restore/db.dump
     if [ -n "$files" ]; then
-      "${DC[@]}" run --rm --no-deps --user 0 -v "$(cd "$(dirname "$files")" && pwd)":/restore:ro --entrypoint sh app \
-        -c "rm -rf /data/files && tar -xzf /restore/$(basename "$files") -C /data && chown -R app /data/files"
+      # Mounted at a fixed path so file names with spaces/symbols are safe.
+      "${DC[@]}" run --rm --no-deps --user 0 -v "$(cd "$(dirname "$files")" && pwd)/$(basename "$files")":/restore/files.tar.gz:ro \
+        --entrypoint sh app -c "rm -rf /data/files && tar -xzf /restore/files.tar.gz -C /data && chown -R app /data/files"
     fi
     "${DC[@]}" start app; wait_healthy
     echo "Restored. The previous database was kept as 'intake_restore_old'." ;;
@@ -115,8 +116,8 @@ case "${1:-help}" in
     echo "Key file saved to $dest. Store it OFFLINE (USB in the office safe). Without it, backups cannot be read." ;;
   import-key)
     need_docker; src=${2:?path to intake-keys.json required}
-    "${DC[@]}" run --rm --no-deps --user 0 -v "$(cd "$(dirname "$src")" && pwd)":/k:ro --entrypoint sh app \
-      -c "mkdir -p /data/keys && cp /k/$(basename "$src") /data/keys/intake-keys.json && chown -R app /data/keys && chmod 600 /data/keys/intake-keys.json"
+    "${DC[@]}" run --rm --no-deps --user 0 -v "$(cd "$(dirname "$src")" && pwd)/$(basename "$src")":/k/key.json:ro \
+      --entrypoint sh app -c "mkdir -p /data/keys && cp /k/key.json /data/keys/intake-keys.json && chown -R app /data/keys && chmod 600 /data/keys/intake-keys.json"
     echo "Key file imported. Restart with: ./office/office.sh restart" ;;
   export-ca)
     need_docker; "${DC[@]}" cp caddy:/data/caddy/pki/authorities/local/root.crt ./office-ca.crt

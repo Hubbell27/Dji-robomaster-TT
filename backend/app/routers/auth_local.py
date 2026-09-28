@@ -14,7 +14,7 @@ import jwt
 import segno
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .. import audit, crypto, passwords
@@ -58,16 +58,25 @@ def _challenge(user: StaffUser) -> str:
 
 
 def _register_failure(db: Session, user: StaffUser) -> None:
+    """Atomically count a failure so parallel requests can't bypass the lockout."""
     s = get_settings()
-    user.failed_logins += 1
-    if user.failed_logins >= s.max_login_attempts:
-        user.locked_until = utcnow() + timedelta(minutes=s.login_lockout_minutes)
-        user.failed_logins = 0
+    count = db.execute(
+        update(StaffUser).where(StaffUser.id == user.id)
+        .values(failed_logins=StaffUser.failed_logins + 1).returning(StaffUser.failed_logins)
+    ).scalar_one()
+    if count >= s.max_login_attempts:
+        db.execute(update(StaffUser).where(StaffUser.id == user.id)
+                   .values(failed_logins=0, locked_until=utcnow() + timedelta(minutes=s.login_lockout_minutes)))
     db.commit()
+    db.refresh(user)
+
+
+def _is_locked(user: StaffUser) -> bool:
+    return bool(user.locked_until and user.locked_until > utcnow())
 
 
 def _check_locked(request: Request, user: StaffUser) -> None:
-    if user.locked_until and user.locked_until > utcnow():
+    if _is_locked(user):
         minutes = max(1, int((user.locked_until - utcnow()).total_seconds() // 60) + 1)
         audit.record(request, audit.Actor("staff", user.id, user.email), "auth.login", outcome="denied",
                      resource_type="staff", resource_id=user.id, details={"reason": "locked"})
@@ -89,12 +98,15 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)) -> dic
         audit.record(request, audit.Actor("staff", None, email), "auth.login", outcome="failure",
                      details={"reason": "unknown_or_inactive"})
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, _BAD_LOGIN)
-    _check_locked(request, user)
     if not passwords.verify_password(body.password, user.password_hash):
-        _register_failure(db, user)
+        # Locked accounts get the same generic answer, so neither the lock nor
+        # the account's existence is revealed to someone without the password.
+        if not _is_locked(user):
+            _register_failure(db, user)
         audit.record(request, audit.Actor("staff", user.id, email), "auth.login", outcome="failure",
                      resource_type="staff", resource_id=user.id, details={"reason": "bad_password"})
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, _BAD_LOGIN)
+    _check_locked(request, user)
 
     if user.totp_enabled:
         return {"stage": "mfa", "challenge": _challenge(user)}
@@ -128,9 +140,22 @@ def verify_mfa(body: MfaIn, request: Request, db: Session = Depends(get_db)) -> 
         _register_failure(db, user)
         audit.record(request, actor, "auth.mfa", outcome="failure", resource_type="staff", resource_id=user.id)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "That code didn't work. Check your authenticator app and try again.")
+    # Claim this time step atomically: two parallel requests with the same code
+    # cannot both succeed.
+    claimed = db.execute(
+        update(StaffUser)
+        .where(StaffUser.id == user.id,
+               (StaffUser.totp_last_step.is_(None)) | (StaffUser.totp_last_step < step))
+        .values(totp_last_step=step)
+    ).rowcount
+    if not claimed:
+        db.rollback()
+        audit.record(request, actor, "auth.mfa", outcome="failure", resource_type="staff", resource_id=user.id,
+                     details={"reason": "replay"})
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "That code was already used. Wait for the next code.")
+    db.refresh(user)
     enrolled_now = not user.totp_enabled
     user.totp_enabled = True
-    user.totp_last_step = step
     user.failed_logins = 0
     user.locked_until = None
     user.last_login_at = utcnow()
@@ -156,6 +181,7 @@ def change_password(body: ChangePasswordIn, request: Request, db: Session = Depe
                     ctx: StaffContext = Depends(current_staff)) -> dict[str, Any]:
     user = db.merge(ctx.user)
     if not passwords.verify_password(body.current_password, user.password_hash):
+        _register_failure(db, user)
         audit.record(request, ctx.actor, "auth.password_change", outcome="failure", resource_type="staff",
                      resource_id=user.id, details={"reason": "bad_current_password"})
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect.")
@@ -165,12 +191,18 @@ def change_password(body: ChangePasswordIn, request: Request, db: Session = Depe
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Choose a password different from the temporary one.")
     user.password_hash = passwords.hash_password(body.new_password)
     user.must_change_password = False
+    user.session_version += 1  # end sessions on other devices; this one gets a fresh token
     db.commit()
     audit.record(request, ctx.actor, "auth.password_change", resource_type="staff", resource_id=user.id)
     return _session_out(user)
 
 
 @router.post("/logout")
-def logout(request: Request, ctx: StaffContext = Depends(current_staff)) -> dict[str, bool]:
+def logout(request: Request, db: Session = Depends(get_db),
+           ctx: StaffContext = Depends(current_staff)) -> dict[str, bool]:
+    # Revoke server-side so a copied token stops working immediately.
+    db.execute(update(StaffUser).where(StaffUser.id == ctx.user.id)
+               .values(session_version=StaffUser.session_version + 1))
+    db.commit()
     audit.record(request, ctx.actor, "auth.logout", resource_type="staff", resource_id=ctx.user.id)
     return {"ok": True}

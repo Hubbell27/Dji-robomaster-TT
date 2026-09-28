@@ -4,6 +4,8 @@
 # the key file, which is deliberately NOT copied here. Keep the key file on a
 # separate USB drive (office script: export-key).
 set -eu
+# Backups contain staff password hashes and the audit log: owner-only files.
+umask 077
 DATA_DIR=${DATA_DIR:-/data}
 BACKUP_DIR=${BACKUP_OUT:-/backups}
 

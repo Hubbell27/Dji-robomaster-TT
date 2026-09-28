@@ -149,3 +149,16 @@ def test_simulated_busy_day(client, desk, admin):
     _, t = _create(client, desk, first_name="Pat0", last_name="Day", dob="1950-01-10")
     assert client.get("/api/patient/intake", headers=_session(client, t, "1950-01-10")).json()["prefilled"] is True
     assert client.get("/api/admin/audit?action=intake.reviewed", headers=admin).json()["total"] == 20
+
+
+def test_prefill_and_lookup_respect_locations(client, desk, north):
+    """A front-desk user at another location must not see or copy this patient's history."""
+    _, token = _create(client, desk)
+    _submit(client, token)
+    params = {"first_name": "Maria", "last_name": "Lopez", "dob": "1985-04-12"}
+    assert client.get("/api/staff/patients/lookup", params=params, headers=north).json() == {"returning": False}
+    north_loc = _location_id("Northside Dental")
+    r = client.post("/api/staff/intakes", headers=north, json={
+        "location_id": north_loc, "first_name": "Maria", "last_name": "Lopez", "dob": "1985-04-12"})
+    detail = client.get(f"/api/staff/intakes/{r.json()['intake']['id']}", headers=north).json()
+    assert detail["prefilled"] is False and detail["answers"] == {} and detail["files"] == []

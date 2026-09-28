@@ -42,15 +42,21 @@ def load_or_create_keyfile(path: str) -> dict[str, str]:
     if p.exists():
         return json.loads(p.read_text())
     p.parent.mkdir(parents=True, exist_ok=True)
-    data = _new_keyfile()
-    # O_EXCL: never clobber a key file created concurrently by another worker.
-    try:
-        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        return json.loads(p.read_text())
+    # Write a complete temp file, then hard-link it into place: the link fails if
+    # another process won the race, and readers never see a half-written file.
+    tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as f:
-        json.dump(data, f, indent=2)
-    return data
+        json.dump(_new_keyfile(), f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    try:
+        os.link(tmp, p)
+    except FileExistsError:
+        pass
+    finally:
+        tmp.unlink(missing_ok=True)
+    return json.loads(p.read_text())
 
 
 @lru_cache
@@ -80,7 +86,7 @@ def check_keyfile_before_start() -> None:
     the key file from its USB backup instead.
     """
     s = get_settings()
-    if s.key_provider != "file" or Path(s.key_file).exists():
+    if s.key_provider != "file":
         return
     from sqlalchemy import func, select
 
@@ -88,8 +94,21 @@ def check_keyfile_before_start() -> None:
     from .models import Intake, StaffUser
 
     with get_sessionmaker()() as db:
-        has_data = db.scalar(select(func.count()).select_from(Intake)) or db.scalar(
+        sample = db.scalar(select(Intake).where(Intake.identity_enc.is_not(None)).limit(1))
+        has_data = sample is not None or db.scalar(
             select(func.count()).select_from(StaffUser).where(StaffUser.totp_secret_enc.is_not(None)))
+    if Path(s.key_file).exists():
+        if sample is not None:
+            from . import crypto
+
+            try:
+                crypto.decrypt_json(sample.identity_enc, sample.aad("identity"))
+            except Exception:
+                raise RuntimeError(
+                    f"Encryption key file {s.key_file} does not match this database (existing records cannot be "
+                    "decrypted with it). Import the key file that belongs to this data before starting."
+                ) from None
+        return
     if has_data:
         raise RuntimeError(
             f"Encryption key file {s.key_file} is missing but the database contains encrypted records. "

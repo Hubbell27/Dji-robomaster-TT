@@ -125,3 +125,68 @@ def test_totp_window():
     now = time.time()
     assert passwords.verify_totp(secret, passwords.totp_now(secret, now), None, now) is not None
     assert passwords.verify_totp(secret, passwords.totp_now(secret, now - 90), None, now) is None
+
+
+def _signed_in(client):
+    _, session = _enroll_and_login(client)
+    h = {"Authorization": f"Bearer {session['token']}"}
+    r = client.post("/api/auth/change-password", headers=h,
+                    json={"current_password": "Temp-Pass-1234!", "new_password": "Brushing-Twice-Daily-9"})
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+def test_logout_revokes_token(office):
+    client, _ = office
+    h = _signed_in(client)
+    assert client.get("/api/staff/me", headers=h).status_code == 200
+    assert client.post("/api/auth/logout", headers=h).status_code == 200
+    assert client.get("/api/staff/me", headers=h).status_code == 401
+
+
+def test_locked_account_does_not_reveal_lock_without_password(office):
+    client, _ = office
+    for _ in range(5):
+        client.post("/api/auth/login", json={"email": "owner@office.test", "password": "wrong"})
+    wrong = client.post("/api/auth/login", json={"email": "owner@office.test", "password": "still-wrong"})
+    assert wrong.status_code == 401 and wrong.json()["detail"] == "Email or password is incorrect."
+
+
+def test_totp_code_single_use_under_parallel_requests(office):
+    import concurrent.futures as cf
+
+    client, _ = office
+    r = client.post("/api/auth/login", json={"email": "owner@office.test", "password": "Temp-Pass-1234!"})
+    data = r.json()
+    code = passwords.totp_now(data["secret"])
+    with cf.ThreadPoolExecutor(6) as ex:
+        results = list(ex.map(lambda _: client.post("/api/auth/verify-mfa",
+                                                     json={"challenge": data["challenge"], "code": code}).status_code,
+                              range(6)))
+    assert results.count(200) == 1
+
+
+def test_wrong_key_file_refused(office, tmp_path, monkeypatch):
+    from app import services
+    from app.keys import check_keyfile_before_start, load_or_create_keyfile
+    from app.models import Intake, IntakeStatus, Location, new_id
+
+    # Create an encrypted record with the current key, then swap in a different key file.
+    with get_sessionmaker()() as db:
+        loc = db.query(Location).first()
+        user = db.query(StaffUser).first()
+        i = Intake(id=new_id(), location_id=loc.id, created_by_id=user.id, status=IntakeStatus.pending,
+                   session_epoch=0, dob_failed_attempts=0)
+        services.rotate_link(i)
+        services.set_identity(i, "A", "B", "1990-01-01")
+        db.add(i)
+        db.commit()
+    check_keyfile_before_start()  # matching key: fine
+    other = tmp_path / "other" / "keys.json"
+    monkeypatch.setenv("INTAKE_KEY_FILE", str(other))
+    for c in (get_settings, get_secrets, crypto.get_key_provider):
+        c.cache_clear()
+    with pytest.raises(RuntimeError, match="missing"):
+        check_keyfile_before_start()
+    load_or_create_keyfile(str(other))
+    with pytest.raises(RuntimeError, match="does not match"):
+        check_keyfile_before_start()

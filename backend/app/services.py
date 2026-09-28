@@ -45,12 +45,17 @@ def save_alerts(intake: Intake, values: list[dict[str, str]]) -> None:
     intake.alerts_enc = crypto.encrypt_json(values, intake.aad("alerts"))
 
 
-def previous_submissions(db: Session, patient_key: str, exclude_id: str | None = None) -> list[Intake]:
+def previous_submissions(db: Session, patient_key: str, location_ids: list[str] | None) -> list[Intake]:
+    """Completed forms for this patient that the caller may see.
+
+    ``location_ids`` is the caller's accessible locations (None = all, for
+    admins), so a front-desk user can never pull another location's records.
+    """
     q = (select(Intake)
          .where(Intake.patient_key == patient_key, Intake.status == IntakeStatus.submitted)
          .order_by(Intake.submitted_at.desc()))
-    if exclude_id:
-        q = q.where(Intake.id != exclude_id)
+    if location_ids is not None:
+        q = q.where(Intake.location_id.in_(location_ids))
     return list(db.scalars(q))
 
 

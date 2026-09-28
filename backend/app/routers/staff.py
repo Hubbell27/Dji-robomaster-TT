@@ -193,7 +193,7 @@ def lookup_patient(request: Request, first_name: str = Query(max_length=100), la
         dob = date.fromisoformat(dob).isoformat()
     except ValueError:
         return {"returning": False}
-    prev = services.previous_submissions(db, crypto.patient_index(first_name, last_name, dob))
+    prev = services.previous_submissions(db, crypto.patient_index(first_name, last_name, dob), ctx.location_ids())
     audit.record(request, ctx.actor, "patient.lookup", resource_type="patient", details={"matches": len(prev)})
     if not prev:
         return {"returning": False}
@@ -214,7 +214,7 @@ def create_intake(body: CreateIntakeIn, request: Request, db: Session = Depends(
     services.set_identity(intake, body.first_name.strip(), body.last_name.strip(), body.dob)
     source = None
     if body.prefill:
-        prev = services.previous_submissions(db, intake.patient_key)
+        prev = services.previous_submissions(db, intake.patient_key, ctx.location_ids())
         if prev:
             source = prev[0]
             services.prefill_from(intake, source)

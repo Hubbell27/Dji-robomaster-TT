@@ -126,8 +126,6 @@ function Start-All {
   Start-Process "https://$s/staff"
 }
 
-function Resolve-Dir($p) { (Resolve-Path (Split-Path -Parent $p)).Path }
-
 switch ($Command) {
   "setup" { Setup }
   "start" { Start-All }
@@ -148,11 +146,12 @@ switch ($Command) {
     if ($ok -ne "RESTORE") { Write-Host "Cancelled."; exit 1 }
     DC stop app
     DC exec -T db sh -c 'dropdb -U intake --if-exists intake_restore_old; psql -U intake -d postgres -c "ALTER DATABASE intake RENAME TO intake_restore_old" && createdb -U intake intake'
-    $dumpDir = Resolve-Dir $Arg1; $dumpName = Split-Path -Leaf $Arg1
-    DC run --rm --no-deps -v "${dumpDir}:/restore:ro" --entrypoint pg_restore backup --no-owner -d intake "/restore/$dumpName"
+    # Files are mounted at fixed container paths so names with spaces/symbols are safe.
+    $dump = (Resolve-Path $Arg1).Path
+    DC run --rm --no-deps -v "${dump}:/restore/db.dump:ro" --entrypoint pg_restore backup --no-owner -d intake /restore/db.dump
     if ($Arg2) {
-      $fDir = Resolve-Dir $Arg2; $fName = Split-Path -Leaf $Arg2
-      DC run --rm --no-deps --user 0 -v "${fDir}:/restore:ro" --entrypoint sh app -c "rm -rf /data/files && tar -xzf /restore/$fName -C /data && chown -R app /data/files"
+      $files = (Resolve-Path $Arg2).Path
+      DC run --rm --no-deps --user 0 -v "${files}:/restore/files.tar.gz:ro" --entrypoint sh app -c "rm -rf /data/files && tar -xzf /restore/files.tar.gz -C /data && chown -R app /data/files"
     }
     DC start app; Wait-Healthy
     Write-Host "Restored. The previous database was kept as 'intake_restore_old'."
@@ -164,8 +163,8 @@ switch ($Command) {
   }
   "import-key" {
     Need-Docker; if (-not $Arg1) { throw "path to intake-keys.json required" }
-    $kDir = Resolve-Dir $Arg1; $kName = Split-Path -Leaf $Arg1
-    DC run --rm --no-deps --user 0 -v "${kDir}:/k:ro" --entrypoint sh app -c "mkdir -p /data/keys && cp /k/$kName /data/keys/intake-keys.json && chown -R app /data/keys && chmod 600 /data/keys/intake-keys.json"
+    $key = (Resolve-Path $Arg1).Path
+    DC run --rm --no-deps --user 0 -v "${key}:/k/key.json:ro" --entrypoint sh app -c "mkdir -p /data/keys && cp /k/key.json /data/keys/intake-keys.json && chown -R app /data/keys && chmod 600 /data/keys/intake-keys.json"
     Write-Host "Key file imported. Restart with: .\office\office.ps1 restart"
   }
   "export-ca" { Need-Docker; DC cp caddy:/data/caddy/pki/authorities/local/root.crt ./office-ca.crt; Write-Host "Saved .\office-ca.crt - install it under 'Trusted Root Certification Authorities' on office PCs/tablets." }
