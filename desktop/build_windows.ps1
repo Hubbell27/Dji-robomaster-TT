@@ -51,6 +51,7 @@ if (-not (Test-Path $winsw)) {
 Copy-Item $winsw "$dist\DentalIntakeService.exe"
 Copy-Item desktop\installer\DentalIntakeService.xml $dist
 Copy-Item desktop\installer\grant-service-logon.ps1 $dist
+Copy-Item desktop\installer\remove-office-ca.ps1 $dist
 Copy-Item desktop\build-assets\OFFICE_GUIDE.html $dist
 Copy-Item desktop\build-assets\icon.ico $dist
 

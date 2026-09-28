@@ -113,7 +113,7 @@ jobs:
           $r = Invoke-WebRequest -UseBasicParsing https://localhost/api/health
           if ($r.StatusCode -ne 200) { throw "workstation cannot reach server over trusted HTTPS" }
           if (-not (Test-Path "$env:PUBLIC\Desktop\Dental Intake.lnk")) { throw "desktop shortcut missing" }
-          Start-Process "C:\Program Files\Dental Intake\unins000.exe" -Wait -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES'
+          Start-Process "C:\Program Files\Dental Intake\unins000.exe" -Wait -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /LOG=C:\unins-ws.log'
           Stop-Process $srv -Force
           Start-Sleep 3
           if (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*Dental Intake CA*') { throw "CA not removed on uninstall" }
@@ -167,7 +167,7 @@ jobs:
           (Invoke-WebRequest -UseBasicParsing https://localhost/api/health).StatusCode
           & $server status | Select-String "submitted"
 
-          Start-Process "C:\Program Files\Dental Intake\unins000.exe" -Wait -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES'
+          Start-Process "C:\Program Files\Dental Intake\unins000.exe" -Wait -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /LOG=C:\unins.log'
           Start-Sleep 3
           if (Get-Service DentalIntake -ErrorAction SilentlyContinue) { throw "service not removed" }
           if (-not (Test-Path "C:\ProgramData\Dental Intake\intake.db")) { throw "office data should be kept on uninstall" }
@@ -176,7 +176,8 @@ jobs:
       - name: Logs on failure
         if: failure()
         run: |
-          Get-Content C:\install.log, C:\ws.log, C:\ws-bad.log, C:\upgrade.log -ErrorAction SilentlyContinue | Select-Object -Last 150
+          Get-Content C:\install.log, C:\ws.log, C:\upgrade.log -ErrorAction SilentlyContinue | Select-Object -Last 120
+          Get-Content C:\unins-ws.log, C:\unins.log -ErrorAction SilentlyContinue | Select-Object -Last 60
           Get-ChildItem "C:\ProgramData\Dental Intake\logs" -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName -Tail 60 }
       - uses: actions/upload-artifact@v4
         if: always()
