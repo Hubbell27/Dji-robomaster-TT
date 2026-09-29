@@ -52,7 +52,7 @@ Filename: "{app}\DentalIntakeService.exe"; Parameters: "stop"; RunOnceId: "StopS
 Filename: "{app}\DentalIntakeService.exe"; Parameters: "uninstall"; RunOnceId: "RemoveService"; Flags: runhidden waituntilterminated; Check: SelectedServer
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Dental Intake HTTPS"""; RunOnceId: "FwHttps"; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Dental Intake HTTP"""; RunOnceId: "FwHttp"; Flags: runhidden
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\remove-office-ca.ps1"""; RunOnceId: "RemoveCA"; Flags: runhidden waituntilterminated
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\remove-office-ca.ps1"""; RunOnceId: "RemoveCA"; Flags: runhidden waituntilterminated
 
 [UninstallDelete]
 Type: files; Name: "{app}\client.json"

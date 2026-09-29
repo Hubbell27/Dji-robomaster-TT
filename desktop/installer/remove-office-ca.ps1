@@ -1,21 +1,37 @@
 # Removes the Dental Intake office certificate(s) from the Windows trust store (run by the uninstaller).
-# Uses certutil (the same tool the installer used to add them) and writes a small log.
+# Finds them two ways (PowerShell's certificate drive and certutil's own listing, the same view the
+# installer used to add them), deletes by thumbprint with certutil, and writes a small log.
 $ErrorActionPreference = "Continue"
 $logDir = Join-Path $env:ProgramData "Dental Intake\logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $log = Join-Path $logDir "uninstall-ca.log"
-"$(Get-Date -Format s) removing Dental Intake office certificates" | Out-File -FilePath $log -Append -Encoding utf8
+function Log($m) { "$(Get-Date -Format s) $m" | Out-File -FilePath $log -Append -Encoding utf8 }
 $certutil = Join-Path $env:SystemRoot "System32\certutil.exe"
-if (-not (Test-Path $certutil)) { $certutil = Join-Path $env:SystemRoot "Sysnative\certutil.exe" }
-$certs = @(Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "*Dental Intake CA*" })
-foreach ($c in $certs) {
-  $out = & $certutil -delstore Root $c.Thumbprint 2>&1
-  "  $($c.Thumbprint) certutil exit $LASTEXITCODE" | Out-File -FilePath $log -Append -Encoding utf8
-  if ($LASTEXITCODE -ne 0) {
-    $out | Out-File -FilePath $log -Append -Encoding utf8
-    Remove-Item -LiteralPath $c.PSPath -Force -ErrorAction Continue
-  }
+if (-not [Environment]::Is64BitProcess -and (Test-Path (Join-Path $env:SystemRoot "Sysnative\certutil.exe"))) {
+  $certutil = Join-Path $env:SystemRoot "Sysnative\certutil.exe"
 }
-$left = @(Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "*Dental Intake CA*" }).Count
-"  found $($certs.Count), remaining $left" | Out-File -FilePath $log -Append -Encoding utf8
+Log "removing Dental Intake office certificates (64-bit process: $([Environment]::Is64BitProcess))"
+
+function Find-OfficeCerts {
+  $found = @{}
+  Get-ChildItem Cert:\LocalMachine\Root -ErrorAction SilentlyContinue |
+    Where-Object { $_.Subject -like "*Dental Intake CA*" } | ForEach-Object { $found[$_.Thumbprint.ToUpper()] = $true }
+  $subject = ""
+  foreach ($line in (& $certutil -store Root 2>$null)) {
+    if ($line -match '^\s*Subject:\s*(.*)$') { $subject = $Matches[1] }
+    elseif ($line -match '^\s*Cert Hash\(sha1\):\s*(.*)$' -and $subject -like "*Dental Intake CA*") {
+      $found[($Matches[1] -replace '\s', '').ToUpper()] = $true
+    }
+  }
+  return @($found.Keys)
+}
+
+$thumbs = Find-OfficeCerts
+Log "found $($thumbs.Count)"
+foreach ($t in $thumbs) {
+  $out = & $certutil -delstore Root $t 2>&1
+  Log "  $t certutil exit $LASTEXITCODE"
+  if ($LASTEXITCODE -ne 0) { $out | Out-File -FilePath $log -Append -Encoding utf8 }
+}
+Log "remaining $((Find-OfficeCerts).Count)"
 exit 0
