@@ -340,7 +340,27 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("fingerprint").set_defaults(fn=cmd_fingerprint)
     sub.add_parser("url").set_defaults(fn=cmd_url)
     a = parser.parse_args(argv)
-    return a.fn(a) or 0
+    try:
+        return a.fn(a) or 0
+    except (SystemExit, KeyboardInterrupt):
+        raise
+    except Exception:
+        # The installer runs these commands hidden, so keep the reason somewhere an admin can read it.
+        _log_failure(a.cmd)
+        raise
+
+
+def _log_failure(cmd: str) -> None:
+    import datetime
+    import traceback
+
+    try:
+        logs = data_dir() / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        with open(logs / "cli.log", "a", encoding="utf-8") as f:
+            f.write(f"--- {datetime.datetime.now().isoformat(timespec='seconds')} {cmd} failed\n{traceback.format_exc()}\n")
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

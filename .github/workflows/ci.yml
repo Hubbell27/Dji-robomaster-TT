@@ -178,6 +178,7 @@ jobs:
 
           # Upgrade in place keeps settings and data.
           Run-Timed "desktop\dist\DentalIntakeSetup.exe" "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=C:\upgrade.log" 300 "upgrade"
+          if (Select-String -Path C:\upgrade.log -Pattern "Setup could not finish" -Quiet) { throw "upgrade: setup step failed (see cli.log below)" }
           Start-Sleep 8
           (Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 https://localhost/api/health).StatusCode
           "▶ status after upgrade"
@@ -195,7 +196,16 @@ jobs:
         run: |
           Get-Content C:\install.log, C:\ws.log, C:\upgrade.log -ErrorAction SilentlyContinue | Select-Object -Last 120
           Get-Content C:\unins-ws.log, C:\unins.log -ErrorAction SilentlyContinue | Select-String -Pattern 'Run|exit|error|fail' -CaseSensitive:$false | Select-Object -First 60
-          Get-ChildItem "C:\ProgramData\Dental Intake\logs" -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName -Tail 60 }
+          # The service keeps some logs open: read them with sharing instead of Get-Content.
+          Get-ChildItem "C:\ProgramData\Dental Intake\logs" -File -ErrorAction SilentlyContinue | ForEach-Object {
+            "== $($_.Name)"
+            try {
+              $fs = [IO.File]::Open($_.FullName, 'Open', 'Read', 'ReadWrite')
+              $lines = (New-Object IO.StreamReader($fs)).ReadToEnd() -split "`n"
+              $fs.Close()
+              $lines | Select-Object -Last 60
+            } catch { "  (could not read: $($_.Exception.Message))" }
+          }
           exit 0
       - uses: actions/upload-artifact@v4
         if: always()

@@ -202,7 +202,7 @@ begin
   Result := True;
   if CurPageID = OfficePage.ID then begin
     if (Trim(OfficePage.Values[0]) = '') or (Trim(OfficePage.Values[1]) = '') or (Pos('@', OfficePage.Values[2]) < 2) then begin
-      MsgBox('Please enter the office name, the administrator''s name and a valid email address.', mbError, MB_OK);
+      SuppressibleMsgBox('Please enter the office name, the administrator''s name and a valid email address.', mbError, MB_OK, IDOK);
       Result := False;
     end;
   end;
@@ -217,14 +217,14 @@ begin
   if CurPageID = ServerPage.ID then begin
     WorkstationAddress := Trim(ServerPage.Values[0]);
     if WorkstationAddress = '' then begin
-      MsgBox('Enter the main office PC''s name or address.', mbError, MB_OK);
+      SuppressibleMsgBox('Enter the main office PC''s name or address.', mbError, MB_OK, IDOK);
       Result := False;
       Exit;
     end;
     if not FetchOfficeCA(WorkstationAddress) then begin
-      MsgBox('Could not reach Dental Intake on ' + WorkstationAddress + '.' + #13#10 +
+      SuppressibleMsgBox('Could not reach Dental Intake on ' + WorkstationAddress + '.' + #13#10 +
         'Check that the main PC is on, Dental Intake is installed there, and both PCs are on the office network.',
-        mbError, MB_OK);
+        mbError, MB_OK, IDOK);
       Result := False;
       Exit;
     end;
@@ -306,7 +306,10 @@ begin
   end;
   Code := RunHidden(ExpandConstant('{app}\DentalIntakeServer.exe'), Args);
   if (Code <> 0) or (not LoadStringsFromFile(ResultFile, Lines)) then begin
-    MsgBox('Setup could not finish (error ' + IntToStr(Code) + '). See ' + DataDir() + '\logs.', mbError, MB_OK);
+    Log('Setup could not finish (error ' + IntToStr(Code) + ')');
+    // An upgrade must never leave the office offline: start the service again with the settings it already has.
+    if IsUpgrade then RunHidden(ExpandConstant('{app}\DentalIntakeService.exe'), 'start');
+    SuppressibleMsgBox('Setup could not finish (error ' + IntToStr(Code) + '). See ' + DataDir() + '\logs\cli.log.', mbError, MB_OK, IDOK);
     Exit;
   end;
   Url := ValueOf(Lines, 'url');
@@ -341,8 +344,8 @@ begin
   end;
   RunHidden(ExpandConstant('{app}\DentalIntakeService.exe'), 'start');
   if not WaitForHealth(HttpsPort) then
-    MsgBox('Dental Intake was installed but did not respond yet. It may need a minute; if it still does not open, ' +
-      'see ' + DataDir() + '\logs.', mbInformation, MB_OK);
+    SuppressibleMsgBox('Dental Intake was installed but did not respond yet. It may need a minute; if it still does not open, ' +
+      'see ' + DataDir() + '\logs.', mbInformation, MB_OK, IDOK);
 
   NetworkAddr := GetComputerNameString();
   if HttpsPort <> '443' then NetworkAddr := NetworkAddr + ':' + HttpsPort;
