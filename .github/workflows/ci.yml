@@ -129,7 +129,10 @@ jobs:
           if ($svc.Status -ne "Running") { throw "service not running" }
           (Invoke-WebRequest -UseBasicParsing https://localhost/api/health).Content
           $httpPort = ((Get-Content C:\result.txt) -match '^ca_http_port=') -replace 'ca_http_port=', ''
-          if ((Invoke-WebRequest -UseBasicParsing "http://localhost:$httpPort/office-ca.crt").Content -notmatch "BEGIN CERTIFICATE") { throw "CA download" }
+          # PowerShell 7 returns non-text downloads as bytes: decode before checking.
+          $ca = (Invoke-WebRequest -UseBasicParsing "http://localhost:$httpPort/office-ca.crt").Content
+          if ($ca -is [byte[]]) { $ca = [Text.Encoding]::ASCII.GetString($ca) }
+          if ($ca -notmatch "BEGIN CERTIFICATE") { throw "CA download" }
           if (-not (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*CI Dental Dental Intake CA*')) { throw "CA not trusted" }
           netsh advfirewall firewall show rule name="Dental Intake HTTPS" | Select-String "LocalPort"
           $acl = (Get-Acl "C:\ProgramData\Dental Intake").Access | ForEach-Object { $_.IdentityReference.Value }
@@ -179,6 +182,7 @@ jobs:
           Get-Content C:\install.log, C:\ws.log, C:\upgrade.log -ErrorAction SilentlyContinue | Select-Object -Last 120
           Get-Content C:\unins-ws.log, C:\unins.log -ErrorAction SilentlyContinue | Select-String -Pattern 'Run|exit|error|fail' -CaseSensitive:$false | Select-Object -First 60
           Get-ChildItem "C:\ProgramData\Dental Intake\logs" -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName -Tail 60 }
+          exit 0
       - uses: actions/upload-artifact@v4
         if: always()
         with:
