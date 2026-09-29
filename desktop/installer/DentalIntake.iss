@@ -294,7 +294,11 @@ var
 begin
   ForceDirectories(DataDir());
   // Office data is readable only by Windows administrators and the service.
-  RunHidden(ExpandConstant('{sys}\icacls.exe'), AddQuotes(DataDir()) + ' /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /Q');
+  // Set the rule on the folder only (no /T): with /T, /inheritance:r stripped every permission from files that
+  // already existed, so after an upgrade even the service couldn't read its own config. Files inherit instead;
+  // resetting them to inherit also repairs data folders an earlier installer left unreadable.
+  RunHidden(ExpandConstant('{sys}\icacls.exe'), AddQuotes(DataDir()) + ' /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /Q');
+  RunHidden(ExpandConstant('{sys}\icacls.exe'), AddQuotes(DataDir() + '\*') + ' /reset /T /C /Q');
 
   ResultFile := ExpandConstant('{tmp}\setup-result.txt');
   Args := 'setup --result-file ' + AddQuotes(ResultFile);

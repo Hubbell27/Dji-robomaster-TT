@@ -25,5 +25,6 @@ secedit /configure /db $db /cfg $cfg /areas USER_RIGHTS | Out-Null
 Remove-Item $cfg, $db -ErrorAction SilentlyContinue
 
 # 2. Give the account access to the data folder (it is otherwise SYSTEM/Administrators only).
-icacls $DataDir /grant "*${sid}:(OI)(CI)M" /T /Q | Out-Null
+# Folder-level, inheritable grant: files and subfolders inherit it (no /T, which would add per-file entries).
+icacls $DataDir /grant "*${sid}:(OI)(CI)M" /Q | Out-Null
 Write-Host "Granted service logon and data access to $Account"

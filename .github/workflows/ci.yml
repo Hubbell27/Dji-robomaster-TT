@@ -183,6 +183,9 @@ jobs:
           (Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 https://localhost/api/health).StatusCode
           "▶ status after upgrade"
           & $server status | Select-String "submitted"
+          # Regression check: after an upgrade, existing data files must still be readable (by admins and the service).
+          Get-Content "C:\ProgramData\Dental Intake\config.json" -ErrorAction Stop | Out-Null
+          "data files still readable after upgrade"
 
           # The uninstaller relaunches itself from a temp copy, so wait for the service to disappear instead.
           Run-Timed "C:\Program Files\Dental Intake\unins000.exe" "/VERYSILENT /SUPPRESSMSGBOXES /LOG=C:\unins.log" 300 "uninstall"
