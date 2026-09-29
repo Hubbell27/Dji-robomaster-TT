@@ -147,16 +147,29 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "e2e failed" }
 
       - name: Backup, restart, tray icon, upgrade, uninstall
+        timeout-minutes: 15
         run: |
+          # Every external command gets a hard timeout and a marker, so a hang names itself.
+          function Run-Timed($file, $argList, $seconds, $label) {
+            "▶ $label"
+            $p = Start-Process $file -ArgumentList $argList -PassThru -NoNewWindow
+            if (-not $p.WaitForExit($seconds * 1000)) { Stop-Process $p -Force -ErrorAction SilentlyContinue; throw "$label timed out after $seconds s" }
+            if ($p.ExitCode -ne 0) { throw "$label failed with exit code $($p.ExitCode)" }
+          }
           $server = "C:\Program Files\Dental Intake\DentalIntakeServer.exe"
-          & $server backup; if ($LASTEXITCODE -ne 0) { throw "backup failed" }
+          Run-Timed $server "backup" 180 "backup"
           $zip = Get-ChildItem "C:\ProgramData\Dental Intake\backups\intake-backup-*.zip" | Select-Object -First 1
           "backup: $($zip.Name) $($zip.Length) bytes"
-          Restart-Service DentalIntake
-          Start-Sleep 8
-          (Invoke-WebRequest -UseBasicParsing https://localhost/api/health).StatusCode
-          & $server status
 
+          "▶ restart service"
+          $job = Start-Job { Restart-Service DentalIntake }
+          if (-not (Wait-Job $job -Timeout 120)) { throw "service restart timed out" }
+          Receive-Job $job
+          Start-Sleep 8
+          (Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 https://localhost/api/health).StatusCode
+          Run-Timed $server "status" 60 "status"
+
+          "▶ tray icon"
           $tray = Start-Process "C:\Program Files\Dental Intake\Dental Intake.exe" -ArgumentList tray -PassThru
           Start-Sleep 8
           if ($tray.HasExited) { throw "tray exited with $($tray.ExitCode)" }
@@ -164,14 +177,15 @@ jobs:
           "tray OK"
 
           # Upgrade in place keeps settings and data.
-          $p = Start-Process desktop\dist\DentalIntakeSetup.exe -Wait -PassThru -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=C:\upgrade.log'
-          if ($p.ExitCode -ne 0) { throw "upgrade failed" }
+          Run-Timed "desktop\dist\DentalIntakeSetup.exe" "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=C:\upgrade.log" 300 "upgrade"
           Start-Sleep 8
-          (Invoke-WebRequest -UseBasicParsing https://localhost/api/health).StatusCode
+          (Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 https://localhost/api/health).StatusCode
+          "▶ status after upgrade"
           & $server status | Select-String "submitted"
 
-          Start-Process "C:\Program Files\Dental Intake\unins000.exe" -Wait -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /LOG=C:\unins.log'
-          Start-Sleep 3
+          # The uninstaller relaunches itself from a temp copy, so wait for the service to disappear instead.
+          Run-Timed "C:\Program Files\Dental Intake\unins000.exe" "/VERYSILENT /SUPPRESSMSGBOXES /LOG=C:\unins.log" 300 "uninstall"
+          for ($i = 0; $i -lt 60 -and (Get-Service DentalIntake -ErrorAction SilentlyContinue); $i++) { Start-Sleep 2 }
           if (Get-Service DentalIntake -ErrorAction SilentlyContinue) { throw "service not removed" }
           if (-not (Test-Path "C:\ProgramData\Dental Intake\intake.db")) { throw "office data should be kept on uninstall" }
           "uninstall OK (data kept)"
